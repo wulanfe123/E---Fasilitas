@@ -1,0 +1,1037 @@
+/* =========================================================
+   VARIABEL WARNA GLOBAL PEMINJAM
+   ========================================================= */
+:root {
+    --primary-color: #0b2c61;   /* biru tua */
+    --accent-color:  #ffb703;   /* kuning */
+    --light-bg:      #f4f6fb;   /* abu muda */
+}
+
+/* =========================================================
+   GLOBAL BODY
+   ========================================================= */
+body {
+    font-family: 'Poppins', sans-serif;
+    background-color: var(--light-bg);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding-top: 85px; /* ruang untuk navbar fixed-top */
+}
+
+/* =========================================================
+   NAVBAR (DASHBOARD & FASILITAS)
+   ========================================================= */
+.navbar {
+    background-color: var(--primary-color);
+    transition: all 0.4s ease;
+    padding: 15px 0;
+    z-index: 1000;
+}
+.navbar.scrolled {
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    padding: 10px 0;
+}
+.navbar-brand span {
+    font-weight: 700;
+    color: #fff;
+    font-size: 1.2rem;
+}
+.nav-link {
+    color: #fff !important;
+    font-weight: 500;
+    margin: 0 10px;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.nav-link i {
+    margin-right: 5px;
+}
+.nav-link::after {
+    content: "";
+    position: absolute;
+    width: 0;
+    height: 2px;
+    bottom: -5px;
+    left: 0;
+    background-color: var(--accent-color);
+    transition: 0.3s;
+}
+.nav-link.active::after {
+    width: 100%;
+}
+.nav-link:hover::after {
+    width: 100%;
+}
+.nav-link:hover {
+    color: var(--accent-color) !important;
+}
+
+.nav-right-icons .nav-link {
+    margin-left: 15px;
+    margin-right: 0;
+}
+.nav-right-icons .dropdown-toggle {
+    padding-right: 0 !important;
+}
+
+/* =========================================================
+   DASHBOARD HERO (.hero) – BUKAN FASILITAS
+   ========================================================= */
+.hero {
+    height: 70vh;
+    background: url('../assets/img/gedung.jpg') center/cover no-repeat;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: white;
+}
+.hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+}
+.hero-content {
+    position: relative;
+    z-index: 2;
+    animation: fadeIn 1.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(30px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Tombol utama */
+.btn-main {
+    background-color: var(--accent-color);
+    color: var(--primary-color);
+    font-weight: 600;
+    border-radius: 30px;
+    padding: 10px 24px;
+    border: 0;
+    transition: 0.3s;
+    font-size: 0.95rem;
+}
+.btn-main:hover {
+    background-color: #ffc933;
+    transform: translateY(-2px);
+}
+/* =========================================================
+   BUTTON LOGIN (BIRU)
+   ========================================================= */
+.btn-login {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* jarak icon dan teks */
+    padding: 10px 26px;
+    background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+    color: #ffffff !important;
+    font-weight: 600;
+    font-size: 0.95rem;
+    border-radius: 28px;
+    border: none;
+    transition: 0.3s ease;
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.25);
+}
+
+.btn-login:hover {
+    background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(37, 99, 235, 0.35);
+}
+
+.btn-login i {
+    font-size: 1.1rem; /* ukuran ikon */
+    display: inline-block;
+}
+
+
+/* =========================================================
+   BUTTON PINJAM SEKARANG (KUNING)
+   ========================================================= */
+.btn-pinjam {
+    background: linear-gradient(180deg, #ffda55 0%, #ffbf00 100%);
+    color: #000;
+    padding: 10px 26px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: 28px;
+    border: none;
+    box-shadow: 0 6px 18px rgba(255,193,7,0.25);
+    transition: 0.3s ease;
+}
+.btn-pinjam:hover {
+    background: linear-gradient(180deg, #ffc933 0%, #e6a800 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(255,193,7,0.35);
+}
+
+/* =========================================================
+   DASHBOARD SECTION KONTEN (Bukan Fasilitas)
+   ========================================================= */
+
+section.py-5.bg-light {
+    padding-top: 100px !important;
+    padding-bottom: 100px !important;
+}
+
+/* Kalau mau ada card khusus di dashboard, pakai class stat-card
+   supaya tidak mengganggu card lain (termasuk card fasilitas) */
+.stat-card {
+    border: none;
+    border-radius: 15px;
+    padding: 20px;
+    background: #fff;
+    transition: all 0.3s ease;
+}
+.stat-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+}
+
+/* =========================================================
+   FOOTER
+   ========================================================= */
+footer {
+    background-color: var(--primary-color) !important;
+    color: #ffffff;
+    padding: 50px 0 20px;
+    margin-top: 100px;
+}
+footer h6 {
+    color: var(--accent-color);
+    font-weight: 600;
+    margin-bottom: 15px;
+    letter-spacing: 0.5px;
+}
+footer p {
+    color: #e2e6f0;
+    line-height: 1.7;
+}
+footer a {
+    color: #ffd65a;
+    text-decoration: none;
+    transition: 0.3s;
+}
+footer a:hover {
+    color: #fff176;
+    text-decoration: underline;
+}
+footer .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    text-align: justify;
+}
+footer .container .row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 20px;
+}
+footer .col-md-4 {
+    flex: 0 0 32%;
+    max-width: 32%;
+}
+footer p,
+footer .small {
+    color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* =========================================================
+   POPUP NOTIFIKASI KECIL (DASHBOARD)
+   ========================================================= */
+#notifPopup {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 1050;
+    max-width: 320px;
+    width: 100%;
+}
+.notif-popup-item {
+    background: #fff;
+    border-left: 4px solid var(--primary-color);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+}
+.notif-popup-item.success { border-left-color: #16a34a; }
+.notif-popup-item.warning { border-left-color: #f59e0b; }
+.notif-popup-item.info    { border-left-color: var(--primary-color); }
+.notif-popup-item:hover { transform: translateY(-2px); }
+.notif-popup-item .title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--primary-color);
+}
+.notif-popup-item .time  {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+/* =========================================================
+   FASILITAS PAGE (fasilitas.php)
+   ========================================================= */
+
+/* Header atas fasilitas */
+.hero-section {
+    background: #ffffff;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 35px 0 25px;
+}
+.hero-section h2 {
+    color: var(--primary-color);
+    font-weight: 700;
+}
+.hero-section p {
+    color: #6c757d;
+    margin-bottom: 0;
+}
+
+/* Bar filter */
+.filter-bar {
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 15px 18px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.05);
+}
+.filter-bar label {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-bottom: 4px;
+}
+.filter-bar .form-select,
+.filter-bar .form-control {
+    font-size: 0.9rem;
+}
+
+/* Card fasilitas (kotak putih rapih) */
+.fasilitas-card {
+    border-radius: 14px;
+    transition: all 0.3s ease;
+    height: 100%;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+    display: flex;
+    flex-direction: column;
+}
+.fasilitas-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.15);
+}
+
+/* gambar di atas card fasilitas */
+.fasilitas-card-img {
+    position: relative;
+    overflow: hidden;
+}
+.fasilitas-card-img img {
+    height: 220px;
+    width: 100%;
+    object-fit: cover;
+    transition: transform 0.5s ease;
+    filter: grayscale(10%);
+}
+.fasilitas-card:hover .fasilitas-card-img img {
+    transform: scale(1.08);
+    filter: grayscale(0%);
+}
+
+/* label hitam transparan di pojok atas gambar */
+.fasilitas-card-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+}
+
+/* badge jenis (kuning, kecil saja) */
+.badge-jenis {
+    background-color: var(--accent-color);
+    color: var(--primary-color);
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.75rem;
+    padding: 6px 12px;
+}
+
+/* badge status (hijau / merah) */
+.badge-status {
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* Tombol ajukan peminjaman di card fasilitas */
+.fasilitas-card .btn-main {
+    border-radius: 999px;
+    width: 100%;
+    justify-content: center;
+}
+/* ============================
+   GLOBAL
+   ============================ */
+body {
+    font-family: 'Poppins', sans-serif;
+    background-color: #f4f6fb;
+}
+
+/* ============================
+   NAVBAR (PEMINJAM)
+   ============================ */
+.navbar {
+    background-color: #0b2c61;
+    transition: all 0.4s ease;
+    padding: 15px 0;
+}
+.navbar.scrolled {
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    padding: 10px 0;
+}
+.navbar-brand span {
+    font-weight: 700;
+    color: #fff;
+    font-size: 1.2rem;
+}
+.nav-link {
+    color: #fff !important;
+    font-weight: 500;
+    margin: 0 10px;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.nav-link i {
+    margin-right: 5px;
+}
+.nav-link::after {
+    content: "";
+    position: absolute;
+    width: 0;
+    height: 2px;
+    bottom: -5px;
+    left: 0;
+    background-color: #ffb703;
+    transition: 0.3s;
+}
+.nav-link.active::after {
+    width: 100%;
+}
+.nav-link:hover::after {
+    width: 100%;
+}
+.nav-link:hover {
+    color: #ffb703 !important;
+}
+
+.nav-right-icons .nav-link {
+    margin-left: 15px;
+    margin-right: 0;
+}
+.nav-right-icons .dropdown-toggle {
+    padding-right: 0 !important;
+}
+
+/* ============================
+   HERO DASHBOARD (.hero)
+   ============================ */
+.hero {
+    height: 70vh;
+    /* path relative ke lokasi CSS: includes/peminjam/peminjam.css */
+    background: url('../../assets/img/gedung.jpg') center/cover no-repeat;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: white;
+}
+.hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+}
+.hero-content {
+    position: relative;
+    z-index: 2;
+    animation: fadeIn 1.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(30px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.btn-main {
+    background-color: #ffb703;
+    color: #0b2c61;
+    font-weight: 600;
+    border-radius: 30px;
+    padding: 10px 24px;
+    transition: 0.3s;
+}
+.btn-main:hover {
+    background-color: #ffc933;
+    transform: translateY(-2px);
+}
+
+/* SECTION PADDING (dashboard) */
+section.py-5.bg-light {
+    padding-top: 100px !important;
+    padding-bottom: 100px !important;
+}
+
+/* CARD UMUM (dashboard & lain) */
+.card,
+.stat-card {
+    border: none;
+    border-radius: 15px;
+    padding: 20px;
+    background: #fff;
+    transition: all 0.3s ease;
+}
+.card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+}
+
+/* ============================
+   FOOTER
+   ============================ */
+footer {
+    background-color: #0b2c61 !important;
+    color: #ffffff;
+    padding: 50px 0 20px;
+    margin-top: 100px;
+}
+footer h6 {
+    color: #ffb703;
+    font-weight: 600;
+    margin-bottom: 15px;
+    letter-spacing: 0.5px;
+}
+footer p {
+    color: #e2e6f0;
+    line-height: 1.7;
+}
+footer a {
+    color: #ffd65a;
+    text-decoration: none;
+    transition: 0.3s;
+}
+footer a:hover {
+    color: #fff176;
+    text-decoration: underline;
+}
+footer .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    text-align: justify;
+}
+footer .container .row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 20px;
+}
+footer .col-md-4 {
+    flex: 0 0 32%;
+    max-width: 32%;
+}
+footer p,
+footer .small {
+    color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* ============================
+   POPUP NOTIFIKASI KECIL
+   ============================ */
+#notifPopup {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 1050;
+    max-width: 320px;
+    width: 100%;
+}
+.notif-popup-item {
+    background: #fff;
+    border-left: 4px solid #0b2c61;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+}
+.notif-popup-item.success { border-left-color: #16a34a; }
+.notif-popup-item.warning { border-left-color: #f59e0b; }
+.notif-popup-item.info    { border-left-color: #0b2c61; }
+.notif-popup-item:hover { transform: translateY(-2px); }
+.notif-popup-item .title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #0b2c61;
+}
+.notif-popup-item .time  {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+/* =======================================================
+   KHUSUS HALAMAN PEMINJAMAN SAYA (peminjaman_saya.php)
+   ======================================================= */
+
+:root {
+    --primary-color: #0b2c61;
+    --accent-color:  #ffb703;
+    --light-bg:      #f4f6fb;
+}
+
+/* body khusus peminjam halaman lain pakai ini juga */
+body.peminjam-page {
+    background-color: var(--light-bg);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding-top: 85px; /* ruang fixed navbar */
+}
+
+/* HERO SECTION ATAS TABEL */
+.hero-section {
+    background-color: #ffffff;
+    color: var(--primary-color);
+    padding-top: 26px;
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+.hero-section h2 {
+    font-weight: 700;
+    font-size: 1.5rem;
+}
+.hero-section p {
+    font-size: 0.9rem;
+}
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background-color: #e0f2fe;
+    color: #0369a1;
+}
+
+/* FILTER BAR DI ATAS TABEL */
+.filter-bar {
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 10px 14px;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+    margin-bottom: 14px;
+}
+.filter-bar label {
+    font-size: 0.78rem;
+    color: #4b5563;
+    margin-bottom: 3px;
+}
+.filter-bar .form-select,
+.filter-bar .form-control {
+    font-size: 0.83rem;
+}
+.filter-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #111827;
+}
+
+/* CARD PEMBUNGKUS TABEL */
+.card-table {
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+    border: none;
+}
+
+.table-wrapper {
+    width: 100%;
+    max-width: 100%;
+}
+
+.table-responsive {
+    overflow-x: auto;
+    padding: 10px;
+}
+
+/* TABEL KARTU */
+.custom-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 12px; /* jarak antar baris */
+    table-layout: fixed;
+}
+
+/* Header tabel */
+.custom-table thead tr {
+    background-color: #ffffff;
+}
+.custom-table thead th {
+    border: none !important;
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-align: center;
+    padding: 14px 18px;
+    background: #eef2ff;
+    color: #111827;
+}
+.custom-table thead th:first-child {
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+}
+.custom-table thead th:last-child {
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+
+/* Lebar kolom */
+.custom-table thead th:nth-child(1) { width: 6%; }
+.custom-table thead th:nth-child(2) { width: 34%; }
+.custom-table thead th:nth-child(3) { width: 18%; }
+.custom-table thead th:nth-child(4) { width: 18%; }
+.custom-table thead th:nth-child(5) { width: 12%; }
+.custom-table thead th:nth-child(6) { width: 12%; }
+
+/* Baris (kartu) */
+.custom-table tbody tr {
+    background-color: #ffffff;
+    box-shadow: 0 3px 8px rgba(15, 23, 42, 0.06);
+}
+.custom-table tbody tr:hover {
+    box-shadow: 0 5px 14px rgba(15, 23, 42, 0.12);
+    transform: translateY(-1px);
+}
+.custom-table tbody td {
+    border: none !important;
+    padding: 14px 18px;
+    font-size: 0.9rem;
+    vertical-align: middle;
+}
+.custom-table tbody td:first-child {
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+}
+.custom-table tbody td:last-child {
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+/* ===== HALAMAN EDIT PEMINJAMAN ===== */
+.edit-peminjaman-wrapper .card-form {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.06);
+    background: #ffffff;
+}
+
+.edit-peminjaman-wrapper .form-label {
+    font-weight: 600;
+    color: #0b2c61;
+}
+
+.edit-peminjaman-wrapper .btn-primary {
+    background-color: #0b2c61;
+    border: none;
+    font-weight: 600;
+}
+
+.edit-peminjaman-wrapper .btn-primary:hover {
+    background-color: #0a2450;
+}
+
+.edit-peminjaman-wrapper .btn-outline-secondary {
+    border-radius: 999px;
+}
+
+.edit-peminjaman-wrapper .btn-primary,
+.edit-peminjaman-wrapper .btn-outline-secondary {
+    border-radius: 999px;
+}
+/* ===== DETAIL PEMINJAMAN ===== */
+.detail-peminjaman-wrapper .detail-card {
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 4px 18px rgba(15, 23, 42, 0.08);
+    background: #ffffff;
+}
+
+.detail-peminjaman-wrapper .detail-card .card-header {
+    background-color: #0b2c61;
+    color: #ffffff;
+    border-bottom: none;
+}
+
+.detail-peminjaman-wrapper .section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0b2c61;
+    margin-bottom: 8px;
+}
+
+.detail-peminjaman-wrapper .info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 0.9rem;
+}
+
+.detail-peminjaman-wrapper .info-row .label {
+    color: #6b7280;
+}
+
+.detail-peminjaman-wrapper .info-row .value {
+    font-weight: 500;
+    color: #111827;
+}
+
+/* badge kondisi & tindak lanjut sudah dipakai juga di riwayat */
+.badge-kondisi,
+.badge-tl {
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+/* status pill umum (sudah dipakai di peminjaman_saya, bisa share) */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 90px;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #fff;
+}
+.status-pill-usulan   { background-color: #f59e0b; }
+.status-pill-diterima { background-color: #0d6efd; }
+.status-pill-ditolak  { background-color: #dc2626; }
+.status-pill-selesai  { background-color: #15803d; }
+
+
+/* Info fasilitas di tabel */
+.fasilitas-name {
+    font-weight: 600;
+    color: #111827;
+}
+.fasilitas-meta {
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+
+/* STATUS PILL */
+.status-pill {
+    display: inline-block;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border-radius: 999px;
+    color: white;
+}
+.status-pill-usulan   { background-color: #f59e0b; }
+.status-pill-diterima { background-color: #0d6efd; }
+.status-pill-ditolak  { background-color: #dc2626; }
+.status-pill-selesai  { background-color: #15803d; }
+
+/* TOMBOL DETAIL & AKSI */
+.btn-detail-round {
+    border-radius: 12px;
+    border: 2px solid #0b2c61;
+    padding: 6px 12px;
+    background-color: #ffffff;
+    color: #0b2c61;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+.btn-detail-round:hover {
+    background-color: #0b2c61;
+    color: #ffffff;
+}
+.btn-action-small {
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.78rem;
+}
+
+/* EMPTY STATE */
+.empty-state {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+/* ===== HERO SECTION (untuk halaman fasilitas, peminjaman, riwayat) ===== */
+.hero-section {
+    background-color: #f4f6fb;
+    color: #0b2c61;
+    padding-top: 20px;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+.hero-section h2 {
+    font-weight: 700;
+    font-size: 1.5rem;
+}
+.hero-section p {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background-color: #e0f2fe;
+    color: #0369a1;
+}
+
+/* ===== TABEL RIWAYAT PEMINJAMAN ===== */
+.riwayat-card {
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+    border: none;
+    background-color: transparent;
+}
+
+.riwayat-table-wrapper {
+    width: 100%;
+    max-width: 100%;
+}
+
+.riwayat-table-responsive {
+    overflow-x: auto;
+    padding: 5px;
+}
+
+.riwayat-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 8px;
+    table-layout: fixed;
+}
+
+.riwayat-table thead tr {
+    background-color: #ffffff;
+}
+.riwayat-table thead th {
+    border: none !important;
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-align: center;
+    padding: 14px 18px;
+}
+.riwayat-table thead th:first-child {
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+}
+.riwayat-table thead th:last-child {
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+
+/* Lebar kolom riwayat */
+.riwayat-table thead th:nth-child(1) { width: 6%; }
+.riwayat-table thead th:nth-child(2) { width: 26%; }
+.riwayat-table thead th:nth-child(3) { width: 14%; }
+.riwayat-table thead th:nth-child(4) { width: 14%; }
+.riwayat-table thead th:nth-child(5) { width: 12%; }
+.riwayat-table thead th:nth-child(6) { width: 14%; }
+.riwayat-table thead th:nth-child(7) { width: 14%; }
+
+.riwayat-table tbody tr {
+    background-color: #f2f2f2;
+}
+.riwayat-table tbody td {
+    border: none !important;
+    padding: 14px 18px;
+    font-size: 0.9rem;
+    vertical-align: middle;
+}
+.riwayat-table tbody td:first-child {
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+}
+.riwayat-table tbody td:last-child {
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+
+/* Status pill untuk riwayat */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 90px;
+    padding: 6px 18px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fff;
+}
+.status-selesai { background-color: #15803d; }
+.status-ditolak { background-color: #dc2626; }
+
+/* Badge kondisi & tindak lanjut */
+.badge-kondisi,
+.badge-tl {
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+/* Tombol detail di riwayat */
+.btn-detail {
+    border-radius: 12px;
+    border: 2px solid #0b2c61;
+    padding: 6px 14px;
+    background-color: #ffffff;
+    color: #0b2c61;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+.btn-detail i {
+    font-size: 1rem;
+}
+.btn-detail:hover {
+    background-color: #0b2c61;
+    color: #ffffff;
+}
+
+/* Empty state riwayat */
+.empty-state {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
