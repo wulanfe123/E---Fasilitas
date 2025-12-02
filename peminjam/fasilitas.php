@@ -41,6 +41,17 @@ if (mb_strlen($search) > 100) {
      dan hari ini antara tanggal_mulai & tanggal_selesai
    - selain itu 'tersedia'
 */
+/* =========================================================
+   QUERY FASILITAS + KETERSEDIAAN AKTUAL (PREPARED)
+   ========================================================= */
+/*
+   ketersediaan_aktual:
+   - 'tidak_tersedia' jika:
+       ADA peminjaman status 'diterima'
+       DAN (hari ini antara tanggal_mulai & tanggal_selesai
+            ATAU fasilitas pernah dikembalikan dengan kondisi 'rusak')
+   - selain itu 'tersedia'
+*/
 
 $sql = "
     SELECT 
@@ -50,9 +61,13 @@ $sql = "
                 SELECT 1
                 FROM daftar_peminjaman_fasilitas df
                 JOIN peminjaman p ON df.id_pinjam = p.id_pinjam
+                LEFT JOIN pengembalian pg ON p.id_pinjam = pg.id_pinjam
                 WHERE df.id_fasilitas = f.id_fasilitas
                   AND p.status = 'diterima'
-                  AND CURDATE() BETWEEN p.tanggal_mulai AND p.tanggal_selesai
+                  AND (
+                        (CURDATE() BETWEEN p.tanggal_mulai AND p.tanggal_selesai)
+                        OR (pg.kondisi = 'rusak')
+                  )
             )
             THEN 'tidak_tersedia'
             ELSE 'tersedia'
@@ -60,6 +75,7 @@ $sql = "
     FROM fasilitas f
     WHERE 1=1
 ";
+
 
 $types  = '';
 $params = [];

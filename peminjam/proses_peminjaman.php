@@ -20,7 +20,7 @@ if ($id_user <= 0) {
    HANYA TERIMA METODE POST
    ========================================================= */
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: peminjaman");
+    header("Location: peminjaman.php");
     exit;
 }
 
@@ -97,7 +97,7 @@ if (isset($_FILES['dokumen_peminjaman']) && $_FILES['dokumen_peminjaman']['error
             $errors[] = "Jenis file harus PDF.";
         }
 
-        // Batas ukuran 2MB (bisa diubah)
+        // Batas ukuran 2MB
         $maxSize = 2 * 1024 * 1024;
         if ($fileSize > $maxSize) {
             $errors[] = "Ukuran file maksimal 2MB.";
@@ -110,7 +110,7 @@ if (isset($_FILES['dokumen_peminjaman']) && $_FILES['dokumen_peminjaman']['error
    ========================================================= */
 if (!empty($errors)) {
     $_SESSION['error'] = implode("<br>", $errors);
-    header("Location: form_peminjaman");
+    header("Location: form_peminjaman.php");
     exit;
 }
 
@@ -124,7 +124,7 @@ if (isset($file) && $file['error'] === UPLOAD_ERR_OK && empty($errors)) {
 
     if (!move_uploaded_file($tmpName, $target)) {
         $_SESSION['error'] = "Gagal menyimpan dokumen di server.";
-        header("Location: form_peminjaman");
+        header("Location: form_peminjaman.php");
         exit;
     }
 
@@ -139,9 +139,6 @@ $conn->begin_transaction();
 
 try {
     /* ---------- 1) INSERT KE TABEL peminjaman ---------- */
-    // DISINI PERBAIKAN: HAPUS created_at KARENA TIDAK ADA DI TABEL
-    // Pastikan tabel kamu punya kolom:
-    // id_pinjam (AI), id_user, tanggal_mulai, tanggal_selesai, status, catatan, dokumen_peminjaman
     $statusAwal = 'usulan';
 
     $sqlInsertP = "
@@ -192,8 +189,7 @@ try {
     }
     $stmtDF->close();
 
-    /* ---------- 3) (OPSIONAL) BUAT NOTIFIKASI UNTUK PEMINJAM ---------- */
-    // DI SINI created_at BOLEH, KARENA TABEL notifikasi MEMANG PAKAI KOLUM ITU DI SEMUA FILE KAMU
+    /* ---------- 3) NOTIFIKASI UNTUK PEMINJAM ---------- */
     $sqlNotif = "
         INSERT INTO notifikasi (id_user, id_pinjam, judul, pesan, tipe, is_read, created_at)
         VALUES (?, ?, ?, ?, ?, 0, NOW())

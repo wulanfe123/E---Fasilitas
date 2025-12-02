@@ -18,7 +18,7 @@ if ($id_user <= 0) {
 $id_pinjam = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if ($id_pinjam <= 0) {
     $_SESSION['error'] = "Peminjaman tidak valid.";
-    header("Location: peminjaman_saya.php");
+    header("Location: riwayat.php");
     exit;
 }
 
@@ -66,7 +66,7 @@ $result = $stmt->get_result();
 if ($result->num_rows === 0) {
     $_SESSION['error'] = "Data peminjaman tidak ditemukan.";
     $stmt->close();
-    header("Location: peminjaman_saya.php");
+    header("Location: riwayat.php");
     exit;
 }
 $detail = $result->fetch_assoc();
@@ -161,27 +161,31 @@ include '../includes/peminjam/navbar.php';
     <div class="container">
         <h2 class="fw-bold mb-1">Detail Peminjaman</h2>
         <p class="mb-1 text-muted">
-            Informasi lengkap mengenai peminjaman fasilitas yang kamu ajukan.
+            Informasi lengkap mengenai peminjaman fasilitas yang kamu ajukan, termasuk pengembalian dan tindak lanjut.
         </p>
     </div>
 </section>
 
 <div class="container mb-5 detail-peminjaman-wrapper">
     <div class="row justify-content-center">
-        <div class="col-lg-10 col-xl-9">
 
-            <?php if (isset($_SESSION['success'])): ?>
+        <?php if (isset($_SESSION['success'])): ?>
+            <div class="col-lg-10 col-xl-9">
                 <div class="alert alert-success">
                     <?= htmlspecialchars($_SESSION['success']); unset($_SESSION['success']); ?>
                 </div>
-            <?php endif; ?>
+            </div>
+        <?php endif; ?>
 
-            <?php if (isset($_SESSION['error'])): ?>
+        <?php if (isset($_SESSION['error'])): ?>
+            <div class="col-lg-10 col-xl-9">
                 <div class="alert alert-danger">
                     <?= htmlspecialchars($_SESSION['error']); unset($_SESSION['error']); ?>
                 </div>
-            <?php endif; ?>
+            </div>
+        <?php endif; ?>
 
+        <div class="col-lg-10 col-xl-9">
             <div class="card detail-card shadow-sm">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <div>
@@ -240,7 +244,8 @@ include '../includes/peminjam/navbar.php';
                             <?php if (!empty($dokumen)): ?>
                                 <p class="mb-1">
                                     <i class="bi bi-file-earmark-pdf-fill me-1 text-danger"></i>
-                                    <a href="../uploads/dokumen/<?= htmlspecialchars($dokumen); ?>" target="_blank">
+                                    <!-- $dokumen sudah berisi path relatif yang disimpan di DB -->
+                                    <a href="<?= htmlspecialchars($dokumen); ?>" target="_blank">
                                         Lihat dokumen peminjaman
                                     </a>
                                 </p>
@@ -289,46 +294,61 @@ include '../includes/peminjam/navbar.php';
 
                     <hr>
 
-                    <!-- Section 4: Tindak lanjut (jika ada) -->
+                    <!-- Section 4: Tindak Lanjut & Komunikasi -->
                     <div class="row mb-3">
-                        <div class="col-md-6 mb-3 mb-md-0">
-                            <h6 class="section-title">Status Tindak Lanjut</h6>
-                            <div class="info-row">
-                                <span class="label">Status</span>
-                                <span class="value">
-                                    <span class="badge badge-tl <?= $tlClass; ?>">
-                                        <?= htmlspecialchars($tlDisplayText); ?>
-                                    </span>
-                                </span>
+                        <div class="col-12">
+                            <h6 class="section-title d-flex align-items-center">
+                                <i class="bi bi-tools me-2"></i> Tindak Lanjut Kerusakan & Komunikasi
+                            </h6>
+
+                            <div class="p-3 rounded border bg-light-subtle mb-2">
+                                <?php if ($id_tindaklanjut > 0): ?>
+                                    <p class="mb-1">
+                                        <strong>Status Tindak Lanjut:</strong>
+                                        <span class="badge <?= $tlClass; ?> ms-1">
+                                            <?= htmlspecialchars($tlDisplayText); ?>
+                                        </span>
+                                    </p>
+
+                                    <?php if (!empty($detail['tanggal_tindaklanjut'])): ?>
+                                        <p class="mb-1">
+                                            <strong>Tanggal:</strong>
+                                            <?= date('d M Y H:i', strtotime($detail['tanggal_tindaklanjut'])); ?>
+                                        </p>
+                                    <?php endif; ?>
+
+                                    <p class="mb-1">
+                                        <strong>Tindakan:</strong><br>
+                                        <?= nl2br(htmlspecialchars($detail['tindakan'] ?? '-')); ?>
+                                    </p>
+                                    <p class="mb-0">
+                                        <strong>Deskripsi:</strong><br>
+                                        <?= $detail['deskripsi_tindaklanjut']
+                                            ? nl2br(htmlspecialchars($detail['deskripsi_tindaklanjut']))
+                                            : '<span class="text-muted">Tidak ada deskripsi tambahan.</span>'; ?>
+                                    </p>
+
+                                    <div class="mt-3">
+                                        <a href="komunikasi_tindaklanjut.php?id_pinjam=<?= (int)$detail['id_pinjam']; ?>&id_tl=<?= (int)$id_tindaklanjut; ?>"
+                                           class="btn btn-danger btn-sm">
+                                            <i class="bi bi-chat-dots-fill me-1"></i>
+                                            Buka Komunikasi Kerusakan
+                                        </a>
+                                    </div>
+                                <?php else: ?>
+                                    <p class="text-muted mb-0">
+                                        Tidak ada tindak lanjut kerusakan untuk peminjaman ini,
+                                        atau fasilitas dikembalikan dalam kondisi baik.
+                                    </p>
+                                <?php endif; ?>
                             </div>
-                            <?php if (!empty($detail['tanggal_tindaklanjut'])): ?>
-                                <div class="info-row">
-                                    <span class="label">Tanggal</span>
-                                    <span class="value">
-                                        <?= date('d M Y', strtotime($detail['tanggal_tindaklanjut'])); ?>
-                                    </span>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                        <div class="col-md-6">
-                            <h6 class="section-title">Rincian Tindak Lanjut</h6>
-                            <?php if ($id_tindaklanjut > 0): ?>
-                                <p class="mb-1"><strong>Tindakan:</strong> <?= htmlspecialchars($detail['tindakan'] ?? '-'); ?></p>
-                                <p class="mb-0 text-muted" style="white-space:pre-line;">
-                                    <?= $detail['deskripsi_tindaklanjut'] ? htmlspecialchars($detail['deskripsi_tindaklanjut']) : 'Tidak ada deskripsi tambahan.'; ?>
-                                </p>
-                            <?php else: ?>
-                                <p class="text-muted mb-0">
-                                    Belum ada tindak lanjut yang dicatat oleh Bagian Umum / Super Admin.
-                                </p>
-                            <?php endif; ?>
                         </div>
                     </div>
 
-                    <!-- Tombol Aksi -->
+                    <!-- Tombol Aksi utama -->
                     <div class="d-flex justify-content-between align-items-center mt-4 flex-wrap gap-2">
-                        <a href="peminjaman_saya.php" class="btn btn-outline-secondary">
-                            <i class="bi bi-arrow-left me-1"></i> Kembali ke daftar peminjaman
+                        <a href="riwayat.php" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i> Kembali ke Riwayat
                         </a>
 
                         <div class="d-flex gap-2">
@@ -356,8 +376,8 @@ include '../includes/peminjam/navbar.php';
 
                 </div>
             </div>
-
         </div>
+
     </div>
 </div>
 

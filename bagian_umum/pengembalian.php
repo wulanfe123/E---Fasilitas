@@ -31,18 +31,15 @@ if (!$user) {
 
 $role = $user['role'] ?? '';
 
-if (!in_array($role, ['bagian_umum', 'bagian_umum'], true)) {
+if (!in_array($role, ['bagian_umum', 'super_admin'], true)) {
     header("Location: ../auth/unauthorized.php");
     exit;
 }
 
 /* =========================================================
-   2. NOTIFIKASI UNTUK NAVBAR ADMIN
+   2. NOTIFIKASI UNTUK NAVBAR ADMIN (BADGE + DROPDOWN)
    ========================================================= */
 
-/* ===================== NOTIFIKASI (BADGE + RIWAYAT) ===================== */
-
-// ========================= NOTIFIKASI SUPER ADMIN / BAGIAN UMUM =========================
 $notifPeminjaman        = [];
 $notifRusak             = [];
 $jumlahNotifPeminjaman  = 0;
@@ -92,14 +89,8 @@ $jumlahNotifRusak = count($notifRusak);
 // Total untuk badge di icon bell
 $jumlahNotif = $jumlahNotifPeminjaman + $jumlahNotifRusak;
 
-// ========================= STATISTIK CEPAT DASHBOARD =========================
-$statUsers        = 0;
-$statFasilitas    = 0;
-$statPeminjaman   = 0;
-$statPengembalian = 0;
-$statTindakLanjut = 0;
-$statLaporan      = 0;
-/* Riwayat 10 notifikasi terbaru */
+// Riwayat 10 notifikasi terbaru (untuk dropdown)
+$notifList = [];
 if ($stmtNotif = $conn->prepare("
     SELECT 
         id_notifikasi,
@@ -149,8 +140,48 @@ function getOneInt(mysqli $conn, string $sql, int $id): ?int {
 }
 
 /* =========================================================
-   5. UPDATE KONDISI PENGEMBALIAN (PERIKSA)
-      - Jika kondisi = rusak → otomatis buat tindaklanjut (proses)
+   4b. HELPER: KIRIM NOTIFIKASI TINDAK LANJUT KE PEMINJAM
+   ========================================================= */
+function kirimNotifikasiTindakLanjut(mysqli $conn, int $id_kembali, string $statusTl): void
+{
+    // Ambil id_pinjam & id_user peminjam
+    $sql = "
+        SELECT p.id_pinjam, p.id_user
+        FROM pengembalian pg
+        JOIN peminjaman p ON pg.id_pinjam = p.id_pinjam
+        WHERE pg.id_kembali = ?
+        LIMIT 1
+    ";
+    if ($stmt = $conn->prepare($sql)) {
+        $stmt->bind_param("i", $id_kembali);
+        $stmt->execute();
+        $stmt->bind_result($id_pinjam, $id_user_peminjam);
+        if ($stmt->fetch()) {
+            $stmt->close();
+
+            $judul = "Tindak Lanjut Kerusakan Peminjaman #{$id_pinjam}";
+            $pesan = "Petugas telah membuat/ memperbarui tindak lanjut kerusakan "
+                   . "untuk peminjaman #{$id_pinjam}. Status tindak lanjut: {$statusTl}.";
+
+            $sqlIns = "
+                INSERT INTO notifikasi (id_user, id_pinjam, judul, pesan, tipe, created_at, is_read, dibaca)
+                VALUES (?, ?, ?, ?, 'info', NOW(), 0, 0)
+            ";
+            if ($stmtIns = $conn->prepare($sqlIns)) {
+                $stmtIns->bind_param("iiss", $id_user_peminjam, $id_pinjam, $judul, $pesan);
+                $stmtIns->execute();
+                $stmtIns->close();
+            }
+        } else {
+            $stmt->close();
+        }
+    }
+}
+
+/* =========================================================
+   5. UPDATE KONDISI PENGEMBALIAN
+      - Jika kondisi = rusak → otomatis buat TINDAKLANJUT (status: proses)
+      - Jika kondisi = bagus → peminjaman.status diubah menjadi 'selesai'
    ========================================================= */
 if (isset($_POST['update']) && in_array($role, ['bagian_umum', 'bagian_umum'], true)) {
     $id_kembali  = (int) ($_POST['id_kembali'] ?? 0);
@@ -178,7 +209,28 @@ if (isset($_POST['update']) && in_array($role, ['bagian_umum', 'bagian_umum'], t
             $stmtUpd->bind_param("sssi", $kondisi, $catatan, $tgl_kembali, $id_kembali);
             if ($stmtUpd->execute()) {
 
-                // Jika kondisi rusak → buat tindak lanjut (jika belum ada)
+                // Ambil id_pinjam dari pengembalian ini
+                $id_pinjam_for_kembali = getOneInt(
+                    $conn,
+                    "SELECT id_pinjam FROM pengembalian WHERE id_kembali = ? LIMIT 1",
+                    $id_kembali
+                );
+
+                // HANYA JIKA kondisi = 'bagus' → peminjaman dianggap selesai
+                if ($id_pinjam_for_kembali !== null && $kondisi === 'bagus') {
+                    if ($stmtUpStatus = $conn->prepare("
+                        UPDATE peminjaman
+                        SET status = 'selesai'
+                        WHERE id_pinjam = ?
+                          AND status = 'diterima'
+                    ")) {
+                        $stmtUpStatus->bind_param("i", $id_pinjam_for_kembali);
+                        $stmtUpStatus->execute();
+                        $stmtUpStatus->close();
+                    }
+                }
+
+                // Jika kondisi rusak → buat TINDAK LANJUT otomatis (jika belum ada)
                 if ($kondisi === 'rusak') {
                     $sudahAdaTL = getOneInt(
                         $conn,
@@ -188,7 +240,7 @@ if (isset($_POST['update']) && in_array($role, ['bagian_umum', 'bagian_umum'], t
 
                     if ($sudahAdaTL === null) {
                         $tindakanDefault  = 'Perbaikan fasilitas';
-                        $deskripsiDefault = 'Fasilitas mengalami kerusakan dan perlu diperbaiki';
+                        $deskripsiDefault = 'Fasilitas mengalami kerusakan dan perlu diperbaiki.';
                         $statusDefault    = 'proses';
 
                         if ($stmtTL = $conn->prepare("
@@ -205,6 +257,9 @@ if (isset($_POST['update']) && in_array($role, ['bagian_umum', 'bagian_umum'], t
                             );
                             $stmtTL->execute();
                             $stmtTL->close();
+
+                            // kirim notifikasi ke peminjam
+                            kirimNotifikasiTindakLanjut($conn, $id_kembali, $statusDefault);
                         }
                     }
                 }
@@ -222,6 +277,7 @@ if (isset($_POST['update']) && in_array($role, ['bagian_umum', 'bagian_umum'], t
     header("Location: pengembalian.php");
     exit;
 }
+
 
 /* =========================================================
    6. HAPUS PENGEMBALIAN + TINDAK LANJUT (hanya bagian_umum)
@@ -263,9 +319,10 @@ if (isset($_GET['hapus']) && $role === 'bagian_umum') {
 }
 
 /* =========================================================
-   7. UPDATE TINDAK LANJUT
+   7. UPDATE TINDAK LANJUT DARI MODAL
       - Jika status = selesai → kondisi pengembalian jadi bagus
         + catatan ditambah "Perbaikan selesai"
+        + peminjaman.status diubah jadi 'selesai'
    ========================================================= */
 if (isset($_POST['tindaklanjut']) && in_array($role, ['bagian_umum', 'bagian_umum'], true)) {
     $id_tindaklanjut = (int) ($_POST['id_tindaklanjut'] ?? 0);
@@ -289,44 +346,65 @@ if (isset($_POST['tindaklanjut']) && in_array($role, ['bagian_umum', 'bagian_umu
             $stmtUpdTL->bind_param("ssi", $status, $deskripsi, $id_tindaklanjut);
             if ($stmtUpdTL->execute()) {
 
-                if ($status === 'selesai') {
-                    $id_kembali = getOneInt(
+                $id_kembali = getOneInt(
+                    $conn,
+                    "SELECT id_kembali FROM tindaklanjut WHERE id_tindaklanjut = ? LIMIT 1",
+                    $id_tindaklanjut
+                );
+
+                if ($id_kembali !== null && $status === 'selesai') {
+                    // Update kondisi pengembalian jadi bagus + tambahkan catatan
+                    $catatanLama = null;
+                    if ($stmtCat = $conn->prepare("SELECT catatan FROM pengembalian WHERE id_kembali = ? LIMIT 1")) {
+                        $stmtCat->bind_param("i", $id_kembali);
+                        $stmtCat->execute();
+                        $resCat = $stmtCat->get_result();
+                        if ($rowCat = $resCat->fetch_assoc()) {
+                            $catatanLama = $rowCat['catatan'];
+                        }
+                        $stmtCat->close();
+                    }
+
+                    $tambahan = 'Perbaikan selesai';
+                    if ($catatanLama === null || $catatanLama === '') {
+                        $catatanBaru = $tambahan;
+                    } else {
+                        $catatanBaru = $catatanLama . ' | ' . $tambahan;
+                    }
+
+                    if ($stmtUpdK = $conn->prepare("
+                        UPDATE pengembalian
+                        SET kondisi = 'bagus', catatan = ?
+                        WHERE id_kembali = ?
+                    ")) {
+                        $stmtUpdK->bind_param("si", $catatanBaru, $id_kembali);
+                        $stmtUpdK->execute();
+                        $stmtUpdK->close();
+                    }
+
+                    // Setelah perbaikan selesai, peminjaman dianggap selesai juga
+                    $id_pinjam_for_kembali = getOneInt(
                         $conn,
-                        "SELECT id_kembali FROM tindaklanjut WHERE id_tindaklanjut = ? LIMIT 1",
-                        $id_tindaklanjut
+                        "SELECT id_pinjam FROM pengembalian WHERE id_kembali = ? LIMIT 1",
+                        $id_kembali
                     );
-
-                    if ($id_kembali !== null) {
-                        $catatanLama = null;
-                        if ($stmtCat = $conn->prepare("
-                            SELECT catatan FROM pengembalian WHERE id_kembali = ? LIMIT 1
+                    if ($id_pinjam_for_kembali !== null) {
+                        if ($stmtUpStatus = $conn->prepare("
+                            UPDATE peminjaman
+                            SET status = 'selesai'
+                            WHERE id_pinjam = ?
+                              AND status = 'diterima'
                         ")) {
-                            $stmtCat->bind_param("i", $id_kembali);
-                            $stmtCat->execute();
-                            $resCat = $stmtCat->get_result();
-                            if ($rowCat = $resCat->fetch_assoc()) {
-                                $catatanLama = $rowCat['catatan'];
-                            }
-                            $stmtCat->close();
-                        }
-
-                        $tambahan = 'Perbaikan selesai';
-                        if ($catatanLama === null || $catatanLama === '') {
-                            $catatanBaru = $tambahan;
-                        } else {
-                            $catatanBaru = $catatanLama . ' | ' . $tambahan;
-                        }
-
-                        if ($stmtUpdK = $conn->prepare("
-                            UPDATE pengembalian
-                            SET kondisi = 'bagus', catatan = ?
-                            WHERE id_kembali = ?
-                        ")) {
-                            $stmtUpdK->bind_param("si", $catatanBaru, $id_kembali);
-                            $stmtUpdK->execute();
-                            $stmtUpdK->close();
+                            $stmtUpStatus->bind_param("i", $id_pinjam_for_kembali);
+                            $stmtUpStatus->execute();
+                            $stmtUpStatus->close();
                         }
                     }
+                }
+
+                // kirim notifikasi ke peminjam tentang update TL
+                if ($id_kembali !== null) {
+                    kirimNotifikasiTindakLanjut($conn, $id_kembali, $status);
                 }
 
                 $_SESSION['success'] = "Data tindak lanjut berhasil diperbarui.";
@@ -356,7 +434,9 @@ include '../includes/admin/sidebar.php';
     <div class="d-flex justify-content-between align-items-center mb-4 mt-3">
         <div>
             <h2 class="fw-bold text-warning mb-1">Kelola Pengembalian</h2>
-            <p class="text-muted mb-0">Pemeriksaan kondisi fasilitas yang telah dikembalikan dan tindak lanjut jika terjadi kerusakan.</p>
+            <p class="text-muted mb-0">
+                Pemeriksaan kondisi fasilitas yang telah dikembalikan dan tindak lanjut jika terjadi kerusakan.
+            </p>
         </div>
         <a href="pengembalian.php" class="btn btn-outline-warning shadow-sm">
             <i class="fas fa-sync-alt me-1"></i> Refresh
@@ -380,35 +460,41 @@ include '../includes/admin/sidebar.php';
         </div>
     <?php endif; ?>
 
-    <!-- Tabel Data Pengembalian (gaya mirip tabel peminjaman) -->
+    <!-- Tabel Data Pengembalian -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-warning text-white fw-semibold d-flex justify-content-between align-items-center">
             <span><i class="fas fa-undo-alt me-2"></i> Data Pengembalian Fasilitas</span>
-            <span class="small">
-                <!-- bisa tambahkan jumlah baris jika mau, nanti diisi di bawah -->
-            </span>
         </div>
         <div class="card-body">
             <table id="datatablesSimple" class="table table-bordered table-hover align-middle">
                 <thead class="table-light text-center">
                     <tr>
-                        <th style="width: 5%;">No</th>
+                        <th style="width: 4%;">No</th>
+                        <th style="width: 8%;">ID Pinjam</th>
                         <th>Peminjam</th>
+                        <th>Fasilitas</th>
                         <th>Tanggal Kembali</th>
                         <th>Kondisi</th>
                         <th>Catatan</th>
                         <th>Tindak Lanjut</th>
-                        <th style="width: 20%;">Aksi</th>
+                        <th style="width: 18%;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php
                     $no = 1;
                     $sql = "
-                        SELECT pg.*, u.nama 
+                        SELECT 
+                            pg.*,
+                            p.id_pinjam,
+                            u.nama,
+                            COALESCE(GROUP_CONCAT(DISTINCT f.nama_fasilitas SEPARATOR ', '), '-') AS fasilitas_list
                         FROM pengembalian pg
                         JOIN peminjaman p ON pg.id_pinjam = p.id_pinjam
                         JOIN users u ON p.id_user = u.id_user
+                        LEFT JOIN daftar_peminjaman_fasilitas df ON p.id_pinjam = df.id_pinjam
+                        LEFT JOIN fasilitas f ON df.id_fasilitas = f.id_fasilitas
+                        GROUP BY pg.id_kembali
                         ORDER BY pg.id_kembali DESC
                     ";
                     $result = mysqli_query($conn, $sql);
@@ -428,11 +514,17 @@ include '../includes/admin/sidebar.php';
                             if ($qTL && mysqli_num_rows($qTL) > 0) {
                                 $tindak = mysqli_fetch_assoc($qTL);
                             }
+
+                            $fasilitasText = $row['fasilitas_list'] !== '-' 
+                                ? htmlspecialchars($row['fasilitas_list']) 
+                                : '<span class="text-muted fst-italic">Tidak ada data fasilitas</span>';
                     ?>
                     <tr>
                         <td class="text-center"><?= $no++; ?></td>
+                        <td class="text-center fw-semibold">#<?= (int)$row['id_pinjam']; ?></td>
                         <td><?= htmlspecialchars($row['nama']); ?></td>
-                        <td><?= htmlspecialchars($row['tgl_kembali']); ?></td>
+                        <td><?= $fasilitasText; ?></td>
+                        <td class="text-center"><?= htmlspecialchars($row['tgl_kembali']); ?></td>
                         <td class="text-center">
                             <span class="badge bg-<?= $badgeClass ?> text-uppercase px-3 py-2">
                                 <?= htmlspecialchars($row['kondisi']); ?>
@@ -511,7 +603,9 @@ include '../includes/admin/sidebar.php';
                                         </div>
                                     </div>
                                     <div class="modal-footer">
-                                        <button type="submit" name="update" class="btn btn-success">Simpan</button>
+                                        <button type="submit" name="update" class="btn btn-success">
+                                            <i class="fas fa-save me-1"></i> Simpan
+                                        </button>
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
                                     </div>
                                 </form>
@@ -547,7 +641,7 @@ include '../includes/admin/sidebar.php';
                                     </div>
                                     <div class="modal-footer">
                                         <button type="submit" name="tindaklanjut" class="btn btn-success">
-                                            Simpan Perubahan
+                                            <i class="fas fa-save me-1"></i> Simpan Perubahan
                                         </button>
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                                             Tutup
@@ -564,7 +658,7 @@ include '../includes/admin/sidebar.php';
                     else:
                     ?>
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-3">
+                        <td colspan="9" class="text-center text-muted py-3">
                             Tidak ada data pengembalian.
                         </td>
                     </tr>
@@ -574,8 +668,11 @@ include '../includes/admin/sidebar.php';
         </div>
     </div>
 </div>
+
 <br><br><br><br><br>
+
 <?php include '../includes/admin/footer.php'; ?>
+
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const table = document.getElementById('datatablesSimple');

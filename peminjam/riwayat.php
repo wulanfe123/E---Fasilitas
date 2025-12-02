@@ -37,7 +37,7 @@ if ($stmtNotif) {
    2) Ambil riwayat peminjaman (PREPARED)
       - status 'selesai'  => sudah ada pengembalian
       - status 'ditolak'  => pengajuan ditolak
-      Sekaligus ambil pengembalian & tindak lanjut jika ada
+      Sekaligus ambil pengembalian & tindak lanjut TERAKHIR jika ada
    ============================ */
 $sqlRiwayat = "
     SELECT 
@@ -52,19 +52,42 @@ $sqlRiwayat = "
         pg.catatan      AS catatan_kembali,
         pg.tgl_kembali,
         
-        tl.id_tindaklanjut,
-        tl.tindakan,
-        tl.deskripsi    AS deskripsi_tindaklanjut,
-        tl.status       AS status_tindaklanjut,
-        tl.tanggal      AS tanggal_tindaklanjut
+        tl_last.id_tindaklanjut,
+        tl_last.tindakan,
+        tl_last.deskripsi    AS deskripsi_tindaklanjut,
+        tl_last.status       AS status_tindaklanjut,
+        tl_last.tanggal      AS tanggal_tindaklanjut
     FROM peminjaman p
     LEFT JOIN daftar_peminjaman_fasilitas df ON p.id_pinjam = df.id_pinjam
     LEFT JOIN fasilitas f ON df.id_fasilitas = f.id_fasilitas
     LEFT JOIN pengembalian pg ON p.id_pinjam = pg.id_pinjam
-    LEFT JOIN tindaklanjut tl ON tl.id_kembali = pg.id_kembali
+    LEFT JOIN (
+        -- Ambil tindak lanjut TERAKHIR per id_kembali
+        SELECT t1.*
+        FROM tindaklanjut t1
+        JOIN (
+            SELECT id_kembali, MAX(id_tindaklanjut) AS max_tl
+            FROM tindaklanjut
+            GROUP BY id_kembali
+        ) t2 ON t1.id_kembali = t2.id_kembali
+             AND t1.id_tindaklanjut = t2.max_tl
+    ) AS tl_last ON tl_last.id_kembali = pg.id_kembali
     WHERE p.id_user = ?
       AND p.status IN ('selesai', 'ditolak')
-    GROUP BY p.id_pinjam
+    GROUP BY 
+        p.id_pinjam,
+        p.tanggal_mulai,
+        p.tanggal_selesai,
+        p.status,
+        pg.id_kembali,
+        pg.kondisi,
+        pg.catatan,
+        pg.tgl_kembali,
+        tl_last.id_tindaklanjut,
+        tl_last.tindakan,
+        tl_last.deskripsi,
+        tl_last.status,
+        tl_last.tanggal
     ORDER BY p.id_pinjam DESC
 ";
 
@@ -79,8 +102,8 @@ $resultRiwayat = $stmtRiwayat->get_result();
 /* ============================
    3) LOAD HEADER & NAVBAR PEMINJAM
    ============================ */
-include '../includes/peminjam/header.php';      // <head> + link CSS + buka <body>
-include '../includes/peminjam/navbar.php';      // navbar peminjam (home/fasilitas/peminjaman/riwayat)
+include '../includes/peminjam/header.php';
+include '../includes/peminjam/navbar.php';
 ?>
 
 <!-- ========================= HERO SECTION ========================= -->
@@ -137,6 +160,10 @@ include '../includes/peminjam/navbar.php';      // navbar peminjam (home/fasilit
 
                                         // Kondisi pengembalian
                                         $kondisi = strtolower($data['kondisi'] ?? '');
+
+                                        // Tindak lanjut terakhir (jika ada)
+                                        $id_tindaklanjut   = !empty($data['id_tindaklanjut']) ? (int)$data['id_tindaklanjut'] : 0;
+                                        $statusTLRaw       = strtolower($data['status_tindaklanjut'] ?? '');
                                     ?>
                                     <tr>
                                         <td><?= $no++; ?></td>
@@ -170,19 +197,18 @@ include '../includes/peminjam/navbar.php';      // navbar peminjam (home/fasilit
                                                 </span><br>
                                             <?php endif; ?>
 
-                                            <!-- Status Tindak Lanjut -->
-                                            <?php if (!empty($data['id_tindaklanjut'])): ?>
+                                            <!-- Status Tindak Lanjut TERAKHIR -->
+                                            <?php if ($id_tindaklanjut > 0): ?>
                                                 <?php 
-                                                    $stTL = strtolower($data['status_tindaklanjut'] ?? '');
-                                                    if ($stTL === 'pending') {
+                                                    if ($statusTLRaw === 'proses') {
                                                         $tlClass = 'bg-warning text-dark';
-                                                        $tlText  = 'Tindak lanjut: Pending';
-                                                    } elseif ($stTL === 'selesai') {
+                                                        $tlText  = 'Tindak lanjut: Proses';
+                                                    } elseif ($statusTLRaw === 'selesai') {
                                                         $tlClass = 'bg-success text-white';
                                                         $tlText  = 'Tindak lanjut: Selesai';
                                                     } else {
                                                         $tlClass = 'bg-info text-white';
-                                                        $tlText  = 'Tindak lanjut: ' . ucfirst($stTL);
+                                                        $tlText  = 'Tindak lanjut: ' . ucfirst($statusTLRaw);
                                                     }
                                                 ?>
                                                 <span class="badge-tl <?= $tlClass; ?> d-inline-block">
@@ -195,18 +221,31 @@ include '../includes/peminjam/navbar.php';      // navbar peminjam (home/fasilit
                                             <?php endif; ?>
                                         </td>
                                         <td>
-                                            <!-- Detail peminjaman -->
-                                            <a href="detail_peminjaman.php?id=<?= (int)$data['id_pinjam']; ?>" 
-                                               class="btn-detail mb-1" title="Lihat detail peminjaman">
-                                                <i class="bi bi-info-circle"></i>
-                                            </a>
-                                            <!-- Detail tindak lanjut (jika ada) -->
-                                            <?php if (!empty($data['id_tindaklanjut'])): ?>
-                                                <a href="detail_tindaklanjut.php?id=<?= (int)$data['id_tindaklanjut']; ?>" 
-                                                   class="btn-detail mt-1" title="Lihat detail tindak lanjut">
-                                                    <i class="bi bi-tools"></i>
+                                            <div class="d-inline-flex flex-column gap-1">
+                                                <!-- Detail peminjaman -->
+                                                <a href="detail_peminjaman.php?id=<?= (int)$data['id_pinjam']; ?>" 
+                                                   class="btn-detail mb-1" title="Lihat detail peminjaman">
+                                                    <i class="bi bi-info-circle"></i>
                                                 </a>
-                                            <?php endif; ?>
+
+                                                <!-- Detail tindak lanjut (jika ada) -->
+                                                <?php if ($id_tindaklanjut > 0): ?>
+                                                    <a href="detail_tindaklanjut.php?id=<?= $id_tindaklanjut; ?>" 
+                                                       class="btn-detail mt-1" title="Lihat detail tindak lanjut">
+                                                        <i class="bi bi-tools"></i>
+                                                    </a>
+                                                <?php endif; ?>
+
+                                                <!-- Komunikasi Kerusakan (CHAT) -->
+                                                <?php if ($kondisi === 'rusak' || $id_tindaklanjut > 0): ?>
+                                                    <a href="komunikasi_tindaklanjut.php?id_pinjam=<?= (int)$data['id_pinjam']; ?>&id_tl=<?= $id_tindaklanjut; ?>"
+                                                       class="btn btn-outline-danger btn-sm mt-1"
+                                                       title="Komunikasi Kerusakan (chat dengan admin)">
+                                                        <i class="bi bi-chat-dots me-1"></i>
+                                                        Komunikasi Kerusakan
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
                                     <?php endwhile; ?>

@@ -5,7 +5,7 @@
                 © <?= date('Y') ?> E-Fasilitas Kampus — Politeknik Negeri Bengkalis
             </div>
         </footer>
-    </div> <!-- END layoutSidenav_content -->
+    </div> 
 </div> <!-- END layoutSidenav -->
 
 <!-- JS -->

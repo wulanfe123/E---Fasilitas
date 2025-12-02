@@ -57,7 +57,7 @@ $isFasilitasPage = ($page === 'daftar_fasilitas.php');
 
                      <!-- Chevron di ujung kanan -->
                       <span class="chevron-right">
-                        <i class="fas fa-chevron-down <?= $isFasilitasPage ? 'rotate' : '' ?>"></i>
+                        <i class=" <?= $isFasilitasPage ? 'rotate' : '' ?>"></i>
                     </span>
                 </a>
 

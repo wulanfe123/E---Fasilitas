@@ -49,16 +49,18 @@ if (mb_strlen($search) > 100) {
 */
 
 $sql = "
-    SELECT 
+    SELECT
         f.*,
-        CASE 
+        CASE
             WHEN EXISTS (
                 SELECT 1
                 FROM daftar_peminjaman_fasilitas df
                 JOIN peminjaman p ON df.id_pinjam = p.id_pinjam
+                LEFT JOIN pengembalian pg ON p.id_pinjam = pg.id_pinjam
                 WHERE df.id_fasilitas = f.id_fasilitas
                   AND p.status = 'diterima'
                   AND CURDATE() BETWEEN p.tanggal_mulai AND p.tanggal_selesai
+                  AND pg.id_pinjam IS NULL
             )
             THEN 'tidak_tersedia'
             ELSE 'tersedia'

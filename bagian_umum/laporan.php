@@ -415,14 +415,17 @@ include '../includes/admin/sidebar.php';
     <!-- ===================== -->
     <!-- 3. TABEL TINDAK LANJUT & KOMPLAIN -->
     <!-- ===================== -->
+    <!-- ===================== -->
+    <!-- 3. TABEL TINDAK LANJUT & KOMUNIKASI KERUSAKAN -->
+    <!-- ===================== -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-warning fw-semibold">
-            Rekap Tindak Lanjut Kerusakan & Komplain Peminjam
+            Rekap Tindak Lanjut Kerusakan & Komunikasi Peminjam
         </div>
         <div class="card-body">
             <p class="text-muted" style="font-size: 0.9rem;">
                 Bagian ini merangkum setiap tindak lanjut kerusakan yang dilakukan oleh Bagian Umum/Super Admin,
-                beserta jumlah komplain yang diajukan peminjam terhadap tindak lanjut tersebut.
+                beserta jumlah percakapan (chat) antara peminjam dengan admin terkait tindak lanjut tersebut.
             </p>
 
             <table class="table table-bordered table-hover align-middle">
@@ -434,17 +437,14 @@ include '../includes/admin/sidebar.php';
                         <th>Nama Peminjam</th>
                         <th>Tindakan</th>
                         <th>Status Tindak Lanjut</th>
-                        <th>Jumlah Komplain</th>
+                        <th>Jumlah Chat</th>
                         <th>Tanggal Tindak Lanjut</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php
                     $no = 1;
-                    // Tabel tindaklanjut & komplain_tindaklanjut, pakai kolom:
-                    //   tl.id_tindaklanjut, tl.tanggal, tl.tindakan, tl.status
-                    //   pengembalian.id_kembali, peminjaman.id_pinjam, users.nama
-                    //   komplain_tindaklanjut.id_komplain
+                    // Rekap tindaklanjut + komunikasi_kerusakan
                     $sqlTL = "
                         SELECT 
                             tl.id_tindaklanjut,
@@ -453,13 +453,13 @@ include '../includes/admin/sidebar.php';
                             tl.status AS status_tl,
                             pg.id_pinjam,
                             u.nama AS nama_peminjam,
-                            COUNT(kt.id_komplain) AS total_komplain
+                            COUNT(DISTINCT ck.id_chat) AS total_chat
                         FROM tindaklanjut tl
-                        JOIN pengembalian pg       ON tl.id_kembali = pg.id_kembali
-                        JOIN peminjaman p          ON pg.id_pinjam = p.id_pinjam
-                        JOIN users u               ON p.id_user = u.id_user
-                        LEFT JOIN komplain_tindaklanjut kt 
-                               ON tl.id_tindaklanjut = kt.id_tindaklanjut
+                        JOIN pengembalian pg ON tl.id_kembali = pg.id_kembali
+                        JOIN peminjaman p    ON pg.id_pinjam = p.id_pinjam
+                        JOIN users u         ON p.id_user = u.id_user
+                        LEFT JOIN komunikasi_kerusakan ck
+                               ON ck.id_tindaklanjut = tl.id_tindaklanjut
                         WHERE {$whereTL}
                         GROUP BY tl.id_tindaklanjut
                         ORDER BY tl.tanggal DESC
@@ -468,7 +468,7 @@ include '../includes/admin/sidebar.php';
 
                     if ($resultTL && $resultTL->num_rows > 0) {
                         while ($r = $resultTL->fetch_assoc()) {
-                            $statusTL = strtolower($r['status_tl']);
+                            $statusTL  = strtolower($r['status_tl']);
                             $badgeClass = 'secondary';
                             if ($statusTL === 'proses')  $badgeClass = 'warning text-dark';
                             if ($statusTL === 'selesai') $badgeClass = 'success';
@@ -485,7 +485,7 @@ include '../includes/admin/sidebar.php';
                                 <td class='text-center'>
                                     <span class='badge bg-{$badgeClass}'>".htmlspecialchars($r['status_tl'])."</span>
                                 </td>
-                                <td class='text-center'>{$r['total_komplain']}</td>
+                                <td class='text-center'>".(int)$r['total_chat']."</td>
                                 <td class='text-center'>{$tglTL}</td>
                             </tr>";
                             $no++;
@@ -498,7 +498,6 @@ include '../includes/admin/sidebar.php';
             </table>
         </div>
     </div>
-</div>
 
 <script>
 // Kirim ke laporan_cetak.php dengan jenis + filter tanggal

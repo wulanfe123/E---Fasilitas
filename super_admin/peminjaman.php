@@ -94,23 +94,6 @@ $statPengembalian = 0;
 $statTindakLanjut = 0;
 $statLaporan      = 0;
 
-/* ===================== HELPER: UPDATE STATUS FASILITAS ===================== */
-function setStatusFasilitasByPeminjaman(mysqli $conn, int $id_pinjam, string $statusBaru)
-{
-    $sql = "
-        UPDATE fasilitas f
-        JOIN daftar_peminjaman_fasilitas df ON f.id_fasilitas = df.id_fasilitas
-        SET f.keterangan = ?
-        WHERE df.id_pinjam = ?
-    ";
-
-    if ($stmt = $conn->prepare($sql)) {
-        $stmt->bind_param("si", $statusBaru, $id_pinjam);
-        $stmt->execute();
-        $stmt->close();
-    }
-}
-
 // ========================
 // AMBIL FLASH MESSAGE
 // ========================
@@ -153,8 +136,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
     ")) {
         $stmt->bind_param("si", $alasan_penolakan, $id_pinjam);
         if ($stmt->execute()) {
-            // kalau sebelumnya sudah diterima, fasilitas dikembalikan jadi tersedia
-            setStatusFasilitasByPeminjaman($conn, $id_pinjam, 'tersedia');
+            // Catatan:
+            // Tidak perlu update fasilitas.ketersediaan,
+            // karena ketersediaan aktual dihitung dari status='diterima'
             $_SESSION['success'] = "Peminjaman #$id_pinjam berhasil ditolak dengan alasan.";
         } else {
             $_SESSION['error'] = "Gagal menolak peminjaman: " . $stmt->error;
@@ -208,19 +192,21 @@ if (isset($_GET['aksi'], $_GET['id'])) {
 
             switch ($aksi) {
                 case 'terima':
+                    // Peminjaman disetujui
                     $new_status = 'diterima';
-                    setStatusFasilitasByPeminjaman($conn, $id_pinjam, 'tidak tersedia');
+                    // Ketersediaan di daftar_fasilitas akan otomatis
+                    // menjadi 'Tidak Tersedia' karena status='diterima'
+                    // dan tanggal aktif, jadi tidak perlu sentuh tabel fasilitas.
                     break;
 
                 case 'selesai':
+                    // Tandai peminjaman selesai (misalnya setelah proses pengembalian dinyatakan bagus)
                     $new_status = 'selesai';
-                    setStatusFasilitasByPeminjaman($conn, $id_pinjam, 'tersedia');
+                    // Setelah status bukan 'diterima', fasilitas akan kembali
+                    // 'Tersedia' secara otomatis di daftar_fasilitas.
                     break;
 
                 case 'hapus':
-                    // sebelum hapus, pastikan fasilitas dikembalikan ke tersedia
-                    setStatusFasilitasByPeminjaman($conn, $id_pinjam, 'tersedia');
-
                     // Jalankan penghapusan dalam "transaksi" sederhana
                     $conn->begin_transaction();
 

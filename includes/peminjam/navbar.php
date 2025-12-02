@@ -92,6 +92,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <i class="bi bi-clock-history"></i> Riwayat
                     </a>
                 </li>
+
             </ul>
 
             <ul class="navbar-nav align-items-center nav-right-icons">

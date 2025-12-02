@@ -269,7 +269,10 @@ if (isset($_GET['delete']) && $role === 'super_admin') {
 }
 
 /* =========================================================
-   7. QUERY DATA FASILITAS + FILTER KATEGORI
+   7. QUERY DATA FASILITAS + KETERSEDIAAN AKTUAL
+      - Tidak Tersedia jika ADA peminjaman status 'diterima'
+        dan hari ini di antara tanggal_mulai & tanggal_selesai
+      - Selain itu Tersedia
    ========================================================= */
 $whereKategori = "";
 if ($kategori !== 'semua') {
@@ -278,7 +281,7 @@ if ($kategori !== 'semua') {
 }
 
 $sqlFasilitas = "
-    SELECT 
+    SELECT
         f.id_fasilitas,
         f.nama_fasilitas,
         f.kategori,
@@ -286,7 +289,7 @@ $sqlFasilitas = "
         f.ketersediaan,
         f.keterangan,
         f.gambar,
-        CASE 
+        CASE
             WHEN EXISTS (
                 SELECT 1
                 FROM daftar_peminjaman_fasilitas df

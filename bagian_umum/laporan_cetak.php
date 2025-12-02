@@ -103,7 +103,7 @@ $qHist = $conn->query("
 ");
 
 /* =========================================================
-   QUERY TINDAK LANJUT & KOMPLAIN (REKAP C)
+   QUERY TINDAK LANJUT & KOMUNIKASI (REKAP C)
    ========================================================= */
 $qTL = $conn->query("
     SELECT 
@@ -113,13 +113,13 @@ $qTL = $conn->query("
         tl.status AS status_tl,
         pg.id_pinjam,
         u.nama AS nama_peminjam,
-        COUNT(kt.id_komplain) AS total_komplain
+        COUNT(DISTINCT ck.id_chat) AS total_chat
     FROM tindaklanjut tl
     JOIN pengembalian pg       ON tl.id_kembali = pg.id_kembali
     JOIN peminjaman p          ON pg.id_pinjam = p.id_pinjam
     JOIN users u               ON p.id_user = u.id_user
-    LEFT JOIN komplain_tindaklanjut kt 
-           ON tl.id_tindaklanjut = kt.id_tindaklanjut
+    LEFT JOIN komunikasi_kerusakan ck 
+           ON tl.id_tindaklanjut = ck.id_tindaklanjut
     WHERE {$whereTL}
     GROUP BY tl.id_tindaklanjut
     ORDER BY tl.tanggal DESC
@@ -131,9 +131,9 @@ if ($jenis == 'peminjaman') {
 } elseif ($jenis == 'riwayat') {
     $subTitle = 'Laporan Riwayat Peminjaman per Fasilitas';
 } elseif ($jenis == 'tindaklanjut') {
-    $subTitle = 'Laporan Tindak Lanjut Kerusakan & Komplain Peminjam';
+    $subTitle = 'Laporan Tindak Lanjut Kerusakan & Komunikasi Peminjam';
 } else {
-    $subTitle = 'Laporan Peminjaman, Riwayat per Fasilitas, dan Tindak Lanjut Kerusakan';
+    $subTitle = 'Laporan Peminjaman, Riwayat per Fasilitas, dan Tindak Lanjut Kerusakan & Komunikasi';
 }
 ?>
 <!doctype html>
@@ -324,17 +324,9 @@ if ($jenis == 'peminjaman') {
                 padding: 0;
                 margin: 0;
             }
-            /* HILANGKAN TAMPILAN URL DARI LINK DI DALAM HALAMAN */
             a[href]:after {
                 content: "";
             }
-            /*
-             * Catatan:
-             * URL "localhost/..." di bagian HEADER/FOOTER kertas
-             * adalah pengaturan bawaan browser (Print header/footer).
-             * Untuk menghilangkannya, di dialog Print browser
-             * matikan opsi "Headers and footers" / "Sertakan header & footer".
-             */
         }
     </style>
 </head>
@@ -385,6 +377,7 @@ if ($jenis == 'peminjaman') {
         <!-- KOP + LOGO -->
         <div class="kop-row">
             <div class="kop-logo-wrap">
+                <!-- Bisa taruh logo kampus di sini kalau mau -->
             </div>
             <div class="judul-laporan">
                 <h3>LAPORAN E-FASILITAS KAMPUS</h3>
@@ -545,7 +538,7 @@ if ($jenis == 'peminjaman') {
         <?php if ($jenis == 'semua' || $jenis == 'tindaklanjut'): ?>
             <!-- C. TINDAK LANJUT -->
             <div class="section-title mt-2">
-                <?= ($jenis == 'semua') ? 'C. ' : 'A. '; ?>Rekap Tindak Lanjut Kerusakan & Komplain Peminjam
+                <?= ($jenis == 'semua') ? 'C. ' : 'A. '; ?>Rekap Tindak Lanjut Kerusakan & Komunikasi Peminjam
             </div>
 
             <div class="table-responsive">
@@ -558,7 +551,7 @@ if ($jenis == 'peminjaman') {
                             <th>Nama Peminjam</th>
                             <th>Tindakan</th>
                             <th>Status Tindak Lanjut</th>
-                            <th>Jumlah Komplain</th>
+                            <th>Jumlah Chat</th>
                             <th>Tanggal Tindak Lanjut</th>
                         </tr>
                     </thead>
@@ -576,6 +569,7 @@ if ($jenis == 'peminjaman') {
 
                                 $statusTL = $r['status_tl'] ?: '-';
                                 $tglTL = $r['tanggal'] ? date('d-m-Y H:i', strtotime($r['tanggal'])) : '-';
+                                $totalChat = (int)($r['total_chat'] ?? 0);
 
                                 echo "
                                 <tr>
@@ -587,7 +581,7 @@ if ($jenis == 'peminjaman') {
                                     <td class='text-center'>
                                         <span class=\"badge bg-{$badgeTL} laporan-badge\">".htmlspecialchars($statusTL)."</span>
                                     </td>
-                                    <td class='text-center'>{$r['total_komplain']}</td>
+                                    <td class='text-center'>{$totalChat}</td>
                                     <td class='text-center'>{$tglTL}</td>
                                 </tr>";
                                 $no++;

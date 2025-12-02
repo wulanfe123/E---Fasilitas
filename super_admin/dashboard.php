@@ -8,8 +8,9 @@ require_role(['super_admin', 'bagian_umum']);
 
 $pageTitle = "Dashboard Admin";
 
-// ========================= GRAFIK PEMINJAMAN & KONDISI =========================
 $tahunSekarang = date('Y');
+
+// ========================= GRAFIK PEMINJAMAN & KONDISI =========================
 
 // -------- PEMINJAMAN PER BULAN --------
 $bulanLabelsPeminjaman = [];
@@ -142,20 +143,20 @@ if ($res = $conn->query("SELECT COUNT(*) AS total FROM pengembalian")) {
 
 // Total tindak lanjut
 if ($res = $conn->query("SELECT COUNT(*) AS total FROM tindaklanjut")) {
-    $row             = $res->fetch_assoc();
+    $row              = $res->fetch_assoc();
     $statTindakLanjut = (int) ($row['total'] ?? 0);
 }
 
 // Laporan = total aktivitas (peminjaman + pengembalian)
 $statLaporan = $statPeminjaman + $statPengembalian;
 
-// ========================= MULAI TAMPILAN (INCLUDE TEMPLATE) =========================
+// ========================= TEMPLATE =========================
 include '../includes/admin/header.php';
 include '../includes/admin/navbar.php';
 include '../includes/admin/sidebar.php';
 ?>
 
-    <!-- ====== KONTEN UTAMA DASHBOARD ====== -->
+<div class="container-fluid px-4 mt-4"><!-- W R A P P E R -->
 
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
@@ -286,7 +287,7 @@ include '../includes/admin/sidebar.php';
     </div>
 
     <!-- GRAFIK -->
-    <div class="row">
+    <div class="row mb-4">
         <div class="col-xl-6 mb-4">
             <div class="card h-100">
                 <div class="card-header bg-info text-white">
@@ -309,88 +310,72 @@ include '../includes/admin/sidebar.php';
         </div>
     </div>
 
-    <!-- SCRIPT KHUSUS HALAMAN INI -->
-    <!-- Chart.js (kalau di header/footer sudah ada, yang ini boleh dihapus, tapi aman walau double) -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</div><!-- /container-fluid -->
 
-    <script>
-        // Toggle sidebar
-        document.getElementById('sidebarToggle')?.addEventListener('click', function () {
-            document.body.classList.toggle('sb-sidenav-toggled');
-        });
+<!-- SCRIPT KHUSUS DASHBOARD -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Toggle sidebar
+    document.getElementById('sidebarToggle')?.addEventListener('click', function () {
+        document.body.classList.toggle('sb-sidenav-toggled');
+    });
 
-        // Mark notifikasi sudah dibaca
-        document.getElementById('notifDropdown')?.addEventListener('click', function () {
-            const badge = document.getElementById('notifBadge');
-            if (!badge) return;
+    // Data grafik dari PHP
+    const bulanLabelsPeminjaman = <?= json_encode($bulanLabelsPeminjaman) ?>;
+    const dataPeminjaman        = <?= json_encode($peminjamanData) ?>;
 
-            fetch('mark_read_superadmin.php', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({})
-            })
-                .then(res => res.json())
-                .then(data => { badge.remove(); })
-                .catch(err => { console.error(err); badge.remove(); });
-        });
-
-        // Data grafik dari PHP
-        const bulanLabelsPeminjaman = <?= json_encode($bulanLabelsPeminjaman) ?>;
-        const dataPeminjaman        = <?= json_encode($peminjamanData) ?>;
-
-        const ctxPeminjaman = document.getElementById('chartPeminjaman');
-        if (ctxPeminjaman) {
-            new Chart(ctxPeminjaman, {
-                type: 'line',
-                data: {
-                    labels: bulanLabelsPeminjaman,
-                    datasets: [{
-                        label: 'Jumlah Peminjaman (<?= $tahunSekarang; ?>)',
-                        data: dataPeminjaman,
-                        backgroundColor: 'rgba(13,202,240,0.15)',
-                        borderColor: '#0dcaf0',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 4,
-                        pointHoverRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: {beginAtZero: true, ticks: {precision: 0}}
-                    }
+    const ctxPeminjaman = document.getElementById('chartPeminjaman');
+    if (ctxPeminjaman) {
+        new Chart(ctxPeminjaman, {
+            type: 'line',
+            data: {
+                labels: bulanLabelsPeminjaman,
+                datasets: [{
+                    label: 'Jumlah Peminjaman (<?= $tahunSekarang; ?>)',
+                    data: dataPeminjaman,
+                    backgroundColor: 'rgba(13,202,240,0.15)',
+                    borderColor: '#0dcaf0',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {beginAtZero: true, ticks: {precision: 0}}
                 }
-            });
-        }
+            }
+        });
+    }
 
-        const bulanLabelsKondisi = <?= json_encode($bulanLabelsKondisi) ?>;
-        const dataKondisiBagus   = <?= json_encode($dataKondisiBagus) ?>;
-        const dataKondisiRusak   = <?= json_encode($dataKondisiRusak) ?>;
+    const bulanLabelsKondisi = <?= json_encode($bulanLabelsKondisi) ?>;
+    const dataKondisiBagus   = <?= json_encode($dataKondisiBagus) ?>;
+    const dataKondisiRusak   = <?= json_encode($dataKondisiRusak) ?>;
 
-        const ctxKondisi = document.getElementById('chartKondisi');
-        if (ctxKondisi) {
-            new Chart(ctxKondisi, {
-                type: 'bar',
-                data: {
-                    labels: bulanLabelsKondisi,
-                    datasets: [
-                        { label: 'Bagus', data: dataKondisiBagus, backgroundColor: '#198754' },
-                        { label: 'Rusak', data: dataKondisiRusak, backgroundColor: '#dc3545' }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: { beginAtZero: true, ticks: { precision: 0 } }
-                    }
+    const ctxKondisi = document.getElementById('chartKondisi');
+    if (ctxKondisi) {
+        new Chart(ctxKondisi, {
+            type: 'bar',
+            data: {
+                labels: bulanLabelsKondisi,
+                datasets: [
+                    { label: 'Bagus', data: dataKondisiBagus, backgroundColor: '#198754' },
+                    { label: 'Rusak', data: dataKondisiRusak, backgroundColor: '#dc3545' }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true, ticks: { precision: 0 } }
                 }
-            });
-        }
-    </script>
+            }
+        });
+    }
+</script>
 
 <?php
-// FOOTER & penutup body/html
 include '../includes/admin/footer.php';
 ?>

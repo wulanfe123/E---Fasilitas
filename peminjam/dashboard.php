@@ -200,8 +200,8 @@ include '../includes/peminjam/navbar.php';
             <?php
             $fasilitas = [
                 ["img" => "aula.jpg",          "nama" => "Aula Serbaguna",     "desc" => "Tempat seminar & acara kampus."],
-                ["img" => "lab_komputer.jpg", "nama" => "Lab Komputer",       "desc" => "Perangkat modern untuk praktikum."],
-                ["img" => "ruang_rapat.jpg",  "nama" => "Ruang Rapat",        "desc" => "Tempat pertemuan resmi."],
+                ["img" => "lab.jpg", "nama" => "Lab Komputer",       "desc" => "Perangkat modern untuk praktikum."],
+                ["img" => "ruang rapat.jpg",  "nama" => "Ruang Rapat",        "desc" => "Tempat pertemuan resmi."],
                 ["img" => "lapangan.jpg",     "nama" => "Lapangan Olahraga",  "desc" => "Kegiatan olahraga & event."]
             ];
 
