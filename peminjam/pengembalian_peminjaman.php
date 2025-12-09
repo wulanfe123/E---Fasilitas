@@ -5,6 +5,8 @@ if (!isset($_SESSION['id_user'])) {
     exit;
 }
 include '../config/koneksi.php';
+include '../config/notifikasi_helper.php';
+
 
 $id_user   = isset($_SESSION['id_user']) ? (int) $_SESSION['id_user'] : 0;
 $nama_user = $_SESSION['nama_user'] ?? 'Peminjam';
@@ -32,7 +34,7 @@ if ($id_pinjam_konfirmasi > 0) {
     $stmtCek = $conn->prepare($sqlCek);
     if (!$stmtCek) {
         $_SESSION['error'] = "Gagal cek data peminjaman: " . $conn->error;
-        header("Location: peminjaman.php");
+        header("Location: peminjaman_saya.php");
         exit;
     }
     $stmtCek->bind_param("i", $id_pinjam_konfirmasi);
@@ -43,19 +45,19 @@ if ($id_pinjam_konfirmasi > 0) {
 
     if (!$dataP) {
         $_SESSION['error'] = "Data peminjaman tidak ditemukan.";
-        header("Location: peminjaman.php");
+        header("Location: peminjaman_saya.php");
         exit;
     }
 
     if ((int)$dataP['id_user'] !== $id_user) {
         $_SESSION['error'] = "Anda tidak berhak mengubah peminjaman ini.";
-        header("Location: peminjaman.php");
+        header("Location: peminjaman_saya.php");
         exit;
     }
 
     if (strtolower($dataP['status']) !== 'diterima') {
         $_SESSION['error'] = "Peminjaman ini sudah tidak aktif atau sudah dikembalikan.";
-        header("Location: peminjaman.php");
+        header("Location: peminjaman_saya.php");
         exit;
     }
 
@@ -110,9 +112,9 @@ if ($id_pinjam_konfirmasi > 0) {
             throw new Exception("Gagal mengupdate status peminjaman.");
         }
         $stmtUp->close();
-
-        // Commit transaksi
         $conn->commit();
+        // Mengirim notifikasi ke peminjam (opsional) dan ke semua admin//
+        notif_pengembalian_baru($conn, $id_pinjam_konfirmasi, $id_user);
 
         $_SESSION['success'] = "Pengembalian fasilitas berhasil dikonfirmasi. 
         Peminjaman dipindah ke riwayat dan fasilitas akan kembali tersedia.";
@@ -123,7 +125,7 @@ if ($id_pinjam_konfirmasi > 0) {
     }
 
     // Setelah proses, kembali ke halaman peminjaman aktif
-    header("Location: peminjaman.php");
+    header("Location: peminjaman_saya.php");
     exit;
 }
 
@@ -348,7 +350,7 @@ include '../includes/peminjam/navbar.php';
                                                 </td>
                                                 <td class="text-center">
                                                     <div class="d-inline-flex flex-column gap-1">
-                                                        <a href="detail_peminjaman.php?id=<?= (int)$row['id_pinjam']; ?>"
+                                                        <a href="detail_peminjaman_saya.php?id=<?= (int)$row['id_pinjam']; ?>"
                                                            class="btn-detail-round"
                                                            title="Detail Peminjaman & Pengembalian">
                                                             <i class="bi bi-info-circle"></i>
@@ -391,7 +393,7 @@ include '../includes/peminjam/navbar.php';
                 Riwayat pengembalian akan muncul di sini setelah kamu mengembalikan fasilitas
                 dan pengelola memproses pengembalian tersebut.
             </p>
-            <a href="peminjaman.php" class="btn btn-primary">
+            <a href="peminjaman_saya.php" class="btn btn-primary">
                 <i class="bi bi-arrow-left-circle me-1"></i> Kembali ke Peminjaman Aktif
             </a>
         </div>

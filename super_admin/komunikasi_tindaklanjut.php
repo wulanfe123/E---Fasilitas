@@ -1,6 +1,7 @@
 <?php
 session_start();
 include '../config/koneksi.php';
+include '../config/notifikasi_helper.php';
 
 /* ==========================
    CEK LOGIN & ROLE
@@ -101,12 +102,12 @@ if (!$dataTl) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kirim_chat'])) {
     $pesan = trim($_POST['pesan'] ?? '');
 
+    // VALIDASI INPUT
     if ($pesan === '') {
         $_SESSION['error'] = "Pesan chat tidak boleh kosong.";
-    } elseif (strlen($pesan) > 1000) {
+    } elseif (mb_strlen($pesan) > 1000) {
         $_SESSION['error'] = "Pesan terlalu panjang (maksimal 1000 karakter).";
     } else {
-        $pesanEsc = mysqli_real_escape_string($conn, $pesan);
 
         $sqlIns = "
             INSERT INTO komunikasi_kerusakan (
@@ -121,12 +122,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kirim_chat'])) {
                 created_at
             )
             VALUES (
-                ?,                       -- id_pinjam
-                ?,                       -- id_tindaklanjut (boleh null)
-                NULL,                    -- id_kembali (belum dipakai)
-                ?,                       -- id_user
-                ?,                       -- peran_pengirim
-                ?,                       -- pesan
+                ?,        -- id_pinjam
+                ?,        -- id_tindaklanjut (boleh null)
+                NULL,     -- id_kembali (belum dipakai)
+                ?,        -- id_user
+                ?,        -- peran_pengirim
+                ?,        -- pesan
                 0,
                 0,
                 NOW()
@@ -136,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kirim_chat'])) {
         if ($stmtIns = $conn->prepare($sqlIns)) {
             // kalau id_tl 0 → set NULL
             $id_tindak_for_bind = $id_tl > 0 ? $id_tl : null;
-            $peran_pengirim     = $role;
+            $peran_pengirim     = $role; // 'super_admin' / 'bagian_umum'
 
             $stmtIns->bind_param(
                 "iiiss",
@@ -144,11 +145,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kirim_chat'])) {
                 $id_tindak_for_bind,
                 $id_user_login,
                 $peran_pengirim,
-                $pesanEsc
+                $pesan
             );
 
             if ($stmtIns->execute()) {
                 $_SESSION['success'] = "Pesan berhasil dikirim.";
+
+                // Contoh: kalau mau kirim notifikasi ke peminjam, bisa pakai helper
+                // cari id_user peminjam dulu, lalu:
+                // tambah_notif($conn, $id_user_peminjam, $id_pinjam, "Chat baru tindak lanjut", $pesan, "chat_tl");
+
             } else {
                 $_SESSION['error'] = "Gagal mengirim pesan: " . $stmtIns->error;
             }
@@ -167,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kirim_chat'])) {
 }
 
 /* ==========================
-   AMBIL RIWAYAT CHAT
+   AMBIL RIWAYAT CHAT (PREPARED)
    ========================== */
 $listChat = [];
 
@@ -204,7 +210,6 @@ if ($stmtChat = $conn->prepare($sqlChat)) {
    TEMPLATE ADMIN
    ========================== */
 include '../includes/admin/header.php';
-include '../includes/admin/navbar.php';
 include '../includes/admin/sidebar.php';
 ?>
 
@@ -215,9 +220,21 @@ include '../includes/admin/sidebar.php';
 }
 
 /* Kolom utama chat supaya sejajar dengan judul, tapi tetap lebar */
+/* Kolom utama chat: agak dekat ke sidebar, tapi tidak mepet */
 .chat-column {
-    max-width: 1050px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: 1200px;      /* boleh disesuaikan */
+    margin-left: 0.75rem;   /* jarak dari sidebar */
+    margin-right: 0;        /* lebih rapat ke kanan */
+}
+
+@media (max-width: 991.98px) {
+    /* Di layar kecil tetap full & tengah */
+    .chat-column {
+        max-width: 100%;
+        margin-left: 0;
+        margin-right: 0;
+    }
 }
 
 /* Box chat */
@@ -292,126 +309,147 @@ include '../includes/admin/sidebar.php';
 }
 </style>
 
-<div class="container-fluid px-4 mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="fw-bold text-danger mb-1">Komunikasi Kerusakan</h2>
-            <p class="text-muted mb-0">
-                Ruang chat antara peminjam dan admin terkait tindak lanjut kerusakan fasilitas.
-            </p>
-        </div>
-        <a href="tindaklanjut.php" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-arrow-left me-1"></i> Kembali ke Tindak Lanjut
-        </a>
-    </div>
+<div id="layoutSidenav_content">
+    
+    <?php include '../includes/admin/navbar.php'; ?>
 
-    <?php if (!empty($success)): ?>
-        <div class="alert alert-success alert-dismissible fade show">
-            <?= htmlspecialchars($success); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-    <?php if (!empty($error)): ?>
-        <div class="alert alert-danger alert-dismissible fade show">
-            <?= htmlspecialchars($error); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-
-    <div class="chat-wrapper row mb-5">
-        <div class="col-12 col-lg-10 chat-column">
-            <!-- INFO RINGKAS -->
-            <div class="card mb-3 card-info border-0">
-                <div class="card-body d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="fw-semibold">
-                            Peminjaman #<?= $detailPinjam['id_pinjam']; ?> 
-                            · <?= htmlspecialchars($detailPinjam['nama_peminjam']); ?>
-                        </div>
-                        <div class="text-muted" style="font-size:.85rem;">
-                            <?php if (!empty($dataTl['id_tindaklanjut'])): ?>
-                                Tindak Lanjut #<?= $dataTl['id_tindaklanjut']; ?> · 
-                            <?php endif; ?>
-                            Tindakan: <?= htmlspecialchars($dataTl['tindakan']); ?>
-                            <?php if (!empty($detailPinjam['tanggal_mulai'])): ?>
-                                <br>
-                                Periode: <?= date('d M Y', strtotime($detailPinjam['tanggal_mulai'])); ?>
-                                - <?= date('d M Y', strtotime($detailPinjam['tanggal_selesai'])); ?>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <div class="text-end">
-                        <?php
-                            $badgeClass = 'secondary';
-                            if (($dataTl['status'] ?? '') === 'proses')  $badgeClass = 'warning text-dark';
-                            elseif (($dataTl['status'] ?? '') === 'selesai') $badgeClass = 'success';
-                        ?>
-                        <span class="badge bg-<?= $badgeClass; ?> text-uppercase">
-                            <?= htmlspecialchars($dataTl['status'] ?? '-'); ?>
-                        </span>
-                    </div>
+    <main>
+        <div class="container-fluid px-4 mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h2 class="fw-bold text-danger mb-1">Komunikasi Kerusakan</h2>
+                    <p class="text-muted mb-0">
+                        Ruang chat antara peminjam dan admin terkait tindak lanjut kerusakan fasilitas.
+                    </p>
                 </div>
+                <a href="tindaklanjut.php" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-left me-1"></i> Kembali ke Tindak Lanjut
+                </a>
             </div>
 
-            <!-- BOX CHAT -->
-            <div class="card mb-3 border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="chat-box mb-3" id="chatBox">
-                        <?php if (empty($listChat)): ?>
-                            <p class="text-muted text-center my-3" style="font-size:.9rem;">
-                                Belum ada percakapan. Mulai chat dengan peminjam di bawah.
-                            </p>
-                        <?php else: ?>
-                            <?php foreach ($listChat as $c): 
-                                $isMe    = ((int)$c['id_user'] === $id_user_login);
-                                $sideCls = $isMe ? 'chat-right' : 'chat-left';
-                            ?>
-                                <div class="chat-item <?= $sideCls; ?>">
-                                    <div>
-                                        <div class="chat-bubble">
-                                            <div class="fw-semibold" style="font-size:.78rem;">
-                                                <?= htmlspecialchars($c['nama']); ?>
-                                                <span class="chat-badge bg-light text-muted ms-1">
-                                                    <?= htmlspecialchars($c['peran_pengirim']); ?>
-                                                </span>
-                                            </div>
-                                            <div><?= nl2br(htmlspecialchars($c['pesan'])); ?></div>
-                                            <div class="chat-meta">
-                                                <?= date('d M Y H:i', strtotime($c['created_at'])); ?>
+            <?php if (!empty($success)): ?>
+                <div class="alert alert-success alert-dismissible fade show">
+                    <?= htmlspecialchars($success); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+            <?php if (!empty($error)): ?>
+                <div class="alert alert-danger alert-dismissible fade show">
+                    <?= htmlspecialchars($error); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <div class="chat-wrapper row mb-5">
+                <div class="col-12 col-lg-10 chat-column">
+                    <!-- INFO RINGKAS -->
+                    <div class="card mb-3 card-info border-0">
+                        <div class="card-body d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="fw-semibold">
+                                    Peminjaman #<?= $detailPinjam['id_pinjam']; ?> 
+                                    · <?= htmlspecialchars($detailPinjam['nama_peminjam']); ?>
+                                </div>
+                                <div class="text-muted" style="font-size:.85rem;">
+                                    <?php if (!empty($dataTl['id_tindaklanjut'])): ?>
+                                        Tindak Lanjut #<?= $dataTl['id_tindaklanjut']; ?> · 
+                                    <?php endif; ?>
+                                    Tindakan: <?= htmlspecialchars($dataTl['tindakan']); ?>
+                                    <?php if (!empty($detailPinjam['tanggal_mulai'])): ?>
+                                        <br>
+                                        Periode: <?= date('d M Y', strtotime($detailPinjam['tanggal_mulai'])); ?>
+                                        - <?= date('d M Y', strtotime($detailPinjam['tanggal_selesai'])); ?>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <?php
+                                    $badgeClass = 'secondary';
+                                    if (($dataTl['status'] ?? '') === 'proses')      $badgeClass = 'warning text-dark';
+                                    elseif (($dataTl['status'] ?? '') === 'selesai') $badgeClass = 'success';
+                                ?>
+                                <span class="badge bg-<?= $badgeClass; ?> text-uppercase">
+                                    <?= htmlspecialchars($dataTl['status'] ?? '-'); ?>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOX CHAT -->
+                    <div class="card mb-3 border-0 shadow-sm">
+                        <div class="card-body">
+                            <div class="chat-box mb-3" id="chatBox">
+                                <?php if (empty($listChat)): ?>
+                                    <p class="text-muted text-center my-3" style="font-size:.9rem;">
+                                        Belum ada percakapan. Mulai chat dengan peminjam di bawah.
+                                    </p>
+                                <?php else: ?>
+                                    <?php foreach ($listChat as $c): 
+                                        $isMe    = ((int)$c['id_user'] === $id_user_login);
+                                        $sideCls = $isMe ? 'chat-right' : 'chat-left';
+                                    ?>
+                                        <div class="chat-item <?= $sideCls; ?>">
+                                            <div>
+                                                <div class="chat-bubble">
+                                                    <div class="fw-semibold" style="font-size:.78rem;">
+                                                        <?= htmlspecialchars($c['nama']); ?>
+                                                        <span class="chat-badge bg-light text-muted ms-1">
+                                                            <?= htmlspecialchars($c['peran_pengirim']); ?>
+                                                        </span>
+                                                    </div>
+                                                    <div><?= nl2br(htmlspecialchars($c['pesan'])); ?></div>
+                                                    <div class="chat-meta">
+                                                        <?= date('d M Y H:i', strtotime($c['created_at'])); ?>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </div>
 
-                    <!-- FORM KIRIM CHAT -->
-                    <form method="post" class="mt-2">
-                        <div class="input-group chat-input-group">
-                            <textarea name="pesan" class="form-control"
-                                      placeholder="Tulis pesan ke peminjam di sini..." required></textarea>
-                            <button class="btn btn-danger" type="submit" name="kirim_chat">
-                                <i class="bi bi-send-fill me-1"></i> Kirim
-                            </button>
+                            <!-- FORM KIRIM CHAT -->
+                            <form method="post" class="mt-2">
+                                <div class="input-group chat-input-group">
+                                    <textarea name="pesan" class="form-control"
+                                              placeholder="Tulis pesan ke peminjam di sini..." required></textarea>
+                                    <button class="btn btn-danger" type="submit" name="kirim_chat">
+                                        <i class="bi bi-send-fill me-1"></i> Kirim
+                                    </button>
+                                </div>
+                                <small class="text-muted d-block mt-1" style="font-size:.8rem;">
+                                    Pesan akan terlihat juga di akun peminjam pada halaman komunikasi kerusakan peminjaman ini.
+                                </small>
+                            </form>
                         </div>
-                        <small class="text-muted d-block mt-1" style="font-size:.8rem;">
-                            Pesan akan terlihat juga di akun peminjam pada halaman komunikasi kerusakan peminjaman ini.
-                        </small>
-                    </form>
+                    </div>
                 </div>
             </div>
+
         </div>
-    </div>
+    </main>
+
+    <footer class="footer-admin">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+            </div>
+            <div>
+                Version 1.0
+            </div>
+        </div>
+    </footer>
+
 </div>
+
+<?php include '../includes/admin/footer.php'; ?>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    // auto scroll ke bawah
     const box = document.getElementById('chatBox');
     if (box) {
         box.scrollTop = box.scrollHeight;
     }
 });
 </script>
-
-<?php include '../includes/admin/footer.php'; ?>

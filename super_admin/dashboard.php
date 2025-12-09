@@ -1,22 +1,69 @@
 <?php
 session_start();
 include '../config/koneksi.php';
-require '../includes/auth_check.php';
 
-// Hanya super_admin & bagian_umum yang boleh akses dashboard admin
-require_role(['super_admin', 'bagian_umum']);
+// Cek login
+if (!isset($_SESSION['id_user']) || !in_array($_SESSION['role'], ['super_admin', 'bagian_umum'])) {
+    header("Location: ../auth/login.php");
+    exit;
+}
 
 $pageTitle = "Dashboard Admin";
+$currentPage = "dashboard";
+$id_user_login = (int)$_SESSION['id_user'];
+$nama_admin = $_SESSION['nama'] ?? 'Admin';
 
 $tahunSekarang = date('Y');
 
-// ========================= GRAFIK PEMINJAMAN & KONDISI =========================
+/* STATISTIK DASHBOARD */
+$statUsers = 0;
+$statFasilitas = 0;
+$statPeminjaman = 0;
+$statPengembalian = 0;
+$statTindakLanjut = 0;
+$statUsulan = 0;
 
-// -------- PEMINJAMAN PER BULAN --------
+// Total pengguna
+$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM users");
+if ($res && $row = mysqli_fetch_assoc($res)) {
+    $statUsers = (int)$row['total'];
+}
+
+// Total fasilitas
+$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM fasilitas");
+if ($res && $row = mysqli_fetch_assoc($res)) {
+    $statFasilitas = (int)$row['total'];
+}
+
+// Total peminjaman
+$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM peminjaman");
+if ($res && $row = mysqli_fetch_assoc($res)) {
+    $statPeminjaman = (int)$row['total'];
+}
+
+// Total usulan (pending)
+$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM peminjaman WHERE status = 'usulan'");
+if ($res && $row = mysqli_fetch_assoc($res)) {
+    $statUsulan = (int)$row['total'];
+}
+
+// Total pengembalian
+$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pengembalian");
+if ($res && $row = mysqli_fetch_assoc($res)) {
+    $statPengembalian = (int)$row['total'];
+}
+
+// Total tindak lanjut
+$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM tindaklanjut");
+if ($res && $row = mysqli_fetch_assoc($res)) {
+    $statTindakLanjut = (int)$row['total'];
+}
+
+/* GRAFIK PEMINJAMAN PER BULAN */
 $bulanLabelsPeminjaman = [];
-$peminjamanData        = [];
+$peminjamanData = [];
 
-$qPeminjaman = $conn->query("
+$qPeminjaman = mysqli_query($conn, "
     SELECT 
         MONTH(tanggal_mulai) AS bulan,
         COUNT(*) AS total
@@ -27,22 +74,22 @@ $qPeminjaman = $conn->query("
 ");
 
 if ($qPeminjaman) {
-    while ($row = $qPeminjaman->fetch_assoc()) {
-        $namaBulan = date('M', mktime(0, 0, 0, $row['bulan'], 10)); // Jan, Feb, dst
+    while ($row = mysqli_fetch_assoc($qPeminjaman)) {
+        $namaBulan = date('M', mktime(0, 0, 0, $row['bulan'], 10));
         $bulanLabelsPeminjaman[] = $namaBulan;
-        $peminjamanData[]        = (int) $row['total'];
+        $peminjamanData[] = (int)$row['total'];
     }
 }
 
-// -------- KONDISI PENGEMBALIAN PER BULAN --------
+/* GRAFIK KONDISI PENGEMBALIAN */
 $bulanLabelsKondisi = [];
-$dataKondisiBagus   = [];
-$dataKondisiRusak   = [];
+$dataKondisiBaik = [];
+$dataKondisiRusak = [];
 
-$qKondisi = $conn->query("
+$qKondisi = mysqli_query($conn, "
     SELECT 
         MONTH(tgl_kembali) AS bulan,
-        SUM(CASE WHEN kondisi = 'bagus' THEN 1 ELSE 0 END) AS bagus,
+        SUM(CASE WHEN kondisi = 'baik' THEN 1 ELSE 0 END) AS baik,
         SUM(CASE WHEN kondisi = 'rusak' THEN 1 ELSE 0 END) AS rusak
     FROM pengembalian
     WHERE YEAR(tgl_kembali) = $tahunSekarang
@@ -51,331 +98,471 @@ $qKondisi = $conn->query("
 ");
 
 if ($qKondisi) {
-    while ($row = $qKondisi->fetch_assoc()) {
+    while ($row = mysqli_fetch_assoc($qKondisi)) {
         $namaBulan = date('M', mktime(0, 0, 0, $row['bulan'], 10));
         $bulanLabelsKondisi[] = $namaBulan;
-        $dataKondisiBagus[]   = (int) ($row['bagus'] ?? 0);
-        $dataKondisiRusak[]   = (int) ($row['rusak'] ?? 0);
+        $dataKondisiBaik[] = (int)($row['baik'] ?? 0);
+        $dataKondisiRusak[] = (int)($row['rusak'] ?? 0);
     }
 }
 
-// ========================= NOTIFIKASI SUPER ADMIN / BAGIAN UMUM =========================
-$notifPeminjaman        = [];
-$notifRusak             = [];
-$jumlahNotifPeminjaman  = 0;
-$jumlahNotifRusak       = 0;
-$jumlahNotif            = 0;
-
-// Peminjaman baru (status usulan)
-$qNotifPeminjaman = $conn->query("
+/* PEMINJAMAN TERBARU */
+$peminjamanTerbaru = [];
+$qTerbaru = mysqli_query($conn, "
     SELECT 
         p.id_pinjam,
-        u.nama,
-        p.tanggal_mulai
+        p.tanggal_mulai,
+        p.status,
+        u.nama AS nama_peminjam,
+        GROUP_CONCAT(f.nama_fasilitas SEPARATOR ', ') AS fasilitas
     FROM peminjaman p
     JOIN users u ON p.id_user = u.id_user
-    WHERE p.status = 'usulan'
+    LEFT JOIN daftar_peminjaman_fasilitas df ON p.id_pinjam = df.id_pinjam
+    LEFT JOIN fasilitas f ON df.id_fasilitas = f.id_fasilitas
+    GROUP BY p.id_pinjam
     ORDER BY p.id_pinjam DESC
     LIMIT 5
 ");
-if ($qNotifPeminjaman) {
-    while ($row = $qNotifPeminjaman->fetch_assoc()) {
-        $notifPeminjaman[] = $row;
+
+if ($qTerbaru) {
+    while ($row = mysqli_fetch_assoc($qTerbaru)) {
+        $peminjamanTerbaru[] = $row;
     }
 }
-$jumlahNotifPeminjaman = count($notifPeminjaman);
 
-// Pengembalian dengan kondisi rusak
-$qNotifRusak = $conn->query("
-    SELECT 
-        k.id_kembali,
-        k.id_pinjam,
-        u.nama,
-        k.tgl_kembali
-    FROM pengembalian k
-    JOIN peminjaman p ON k.id_pinjam = p.id_pinjam
-    JOIN users u ON p.id_user = u.id_user
-    WHERE k.kondisi = 'rusak'
-    ORDER BY k.id_kembali DESC
-    LIMIT 5
-");
-if ($qNotifRusak) {
-    while ($row = $qNotifRusak->fetch_assoc()) {
-        $notifRusak[] = $row;
-    }
-}
-$jumlahNotifRusak = count($notifRusak);
-
-// Total untuk badge di icon bell
-$jumlahNotif = $jumlahNotifPeminjaman + $jumlahNotifRusak;
-
-// ========================= STATISTIK CEPAT DASHBOARD =========================
-$statUsers        = 0;
-$statFasilitas    = 0;
-$statPeminjaman   = 0;
-$statPengembalian = 0;
-$statTindakLanjut = 0;
-$statLaporan      = 0;
-
-// Total pengguna
-if ($res = $conn->query("SELECT COUNT(*) AS total FROM users")) {
-    $row       = $res->fetch_assoc();
-    $statUsers = (int) ($row['total'] ?? 0);
-}
-
-// Total fasilitas
-if ($res = $conn->query("SELECT COUNT(*) AS total FROM fasilitas")) {
-    $row           = $res->fetch_assoc();
-    $statFasilitas = (int) ($row['total'] ?? 0);
-}
-
-// Total peminjaman
-if ($res = $conn->query("SELECT COUNT(*) AS total FROM peminjaman")) {
-    $row            = $res->fetch_assoc();
-    $statPeminjaman = (int) ($row['total'] ?? 0);
-}
-
-// Total pengembalian
-if ($res = $conn->query("SELECT COUNT(*) AS total FROM pengembalian")) {
-    $row              = $res->fetch_assoc();
-    $statPengembalian = (int) ($row['total'] ?? 0);
-}
-
-// Total tindak lanjut
-if ($res = $conn->query("SELECT COUNT(*) AS total FROM tindaklanjut")) {
-    $row              = $res->fetch_assoc();
-    $statTindakLanjut = (int) ($row['total'] ?? 0);
-}
-
-// Laporan = total aktivitas (peminjaman + pengembalian)
-$statLaporan = $statPeminjaman + $statPengembalian;
-
-// ========================= TEMPLATE =========================
+// Include header, sidebar, navbar
 include '../includes/admin/header.php';
-include '../includes/admin/navbar.php';
 include '../includes/admin/sidebar.php';
 ?>
 
-<div class="container-fluid px-4 mt-4"><!-- W R A P P E R -->
+<!-- Main Content Area -->
+<div id="layoutSidenav_content">
+    
+    <?php include '../includes/admin/navbar.php'; ?>
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h1 class="fw-bold text-dark mb-1">Dashboard Admin</h1>
-            <p class="page-header-subtitle mb-0">
-                Ringkasan aktivitas peminjaman, pengembalian, tindak lanjut, dan kondisi fasilitas kampus.
-            </p>
-        </div>
-    </div>
-
-    <!-- KARTU STATISTIK UTAMA -->
-    <div class="row mb-4">
-        <!-- Pengguna -->
-        <div class="col-xl-4 col-md-6 mb-3">
-            <div class="card bg-primary text-white h-100 quick-card">
-                <div class="card-body">
-                    <div>
-                        <div class="fw-semibold mb-1">
-                            <i class="fas fa-users me-2"></i> Pengguna
-                        </div>
-                        <div class="fs-2 fw-bold"><?= $statUsers; ?></div>
-                        <small class="opacity-75">Total akun terdaftar</small>
+    <!-- Main Content -->
+    <main>
+        <div class="container-fluid">
+            
+            <!-- Page Header -->
+            <div class="page-header-dashboard">
+                <div class="page-header-content">
+                    <h1 class="page-title">
+                        <i class="fas fa-tachometer-alt"></i>
+                        Dashboard Admin
+                    </h1>
+                    <p class="page-subtitle">
+                        Selamat datang, <strong><?= htmlspecialchars($nama_admin); ?></strong>! 
+                        Ringkasan aktivitas peminjaman fasilitas kampus.
+                    </p>
+                </div>
+                <div class="page-header-actions">
+                    <div class="badge-date">
+                        <i class="far fa-calendar-alt"></i>
+                        <span><?= date('d F Y'); ?></span>
                     </div>
                 </div>
-                <div class="card-footer d-flex justify-content-between align-items-center">
-                    <a class="text-white small" href="kelola_pengguna.php">Kelola Pengguna</a>
-                    <i class="fas fa-arrow-right"></i>
-                </div>
             </div>
-        </div>
 
-        <!-- Fasilitas -->
-        <div class="col-xl-4 col-md-6 mb-3">
-            <div class="card bg-danger text-white h-100 quick-card">
-                <div class="card-body">
-                    <div>
-                        <div class="fw-semibold mb-1">
-                            <i class="fas fa-building me-2"></i> Fasilitas
+            <!-- Statistics Cards -->
+            <div class="row g-4 mb-4">
+                <!-- Users Card -->
+                <div class="col-xl-3 col-md-6">
+                    <div class="stat-card stat-card-blue">
+                        <div class="stat-card-body">
+                            <div class="stat-card-icon">
+                                <i class="fas fa-users"></i>
+                            </div>
+                            <div class="stat-card-content">
+                                <div class="stat-card-number"><?= number_format($statUsers); ?></div>
+                                <div class="stat-card-label">Total Pengguna</div>
+                            </div>
                         </div>
-                        <div class="fs-2 fw-bold"><?= $statFasilitas; ?></div>
-                        <small class="opacity-75">Total fasilitas terdaftar</small>
+                        <a href="kelola_pengguna.php" class="stat-card-footer">
+                            <span>Kelola</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </a>
                     </div>
                 </div>
-                <div class="card-footer d-flex justify-content-between align-items-center">
-                    <a class="text-white small" href="daftar_fasilitas.php">Kelola Fasilitas</a>
-                    <i class="fas fa-arrow-right"></i>
-                </div>
-            </div>
-        </div>
 
-        <!-- Peminjaman -->
-        <div class="col-xl-4 col-md-6 mb-3">
-            <div class="card bg-success text-white h-100 quick-card">
-                <div class="card-body">
-                    <div>
-                        <div class="fw-semibold mb-1">
-                            <i class="fas fa-hand-holding me-2"></i> Peminjaman
+                <!-- Fasilitas Card -->
+                <div class="col-xl-3 col-md-6">
+                    <div class="stat-card stat-card-purple">
+                        <div class="stat-card-body">
+                            <div class="stat-card-icon">
+                                <i class="fas fa-building"></i>
+                            </div>
+                            <div class="stat-card-content">
+                                <div class="stat-card-number"><?= number_format($statFasilitas); ?></div>
+                                <div class="stat-card-label">Total Fasilitas</div>
+                            </div>
                         </div>
-                        <div class="fs-2 fw-bold"><?= $statPeminjaman; ?></div>
-                        <small class="opacity-75">Total peminjaman tercatat</small>
+                        <a href="daftar_fasilitas.php" class="stat-card-footer">
+                            <span>Kelola</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </a>
                     </div>
                 </div>
-                <div class="card-footer d-flex justify-content-between align-items-center">
-                    <a class="text-white small" href="peminjaman.php">Kelola Peminjaman</a>
-                    <i class="fas fa-arrow-right"></i>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <div class="row mb-4">
-        <!-- Pengembalian -->
-        <div class="col-xl-4 col-md-6 mb-3">
-            <div class="card bg-warning text-white h-100 quick-card">
-                <div class="card-body">
-                    <div>
-                        <div class="fw-semibold mb-1">
-                            <i class="fas fa-undo-alt me-2"></i> Pengembalian
+                <!-- Peminjaman Card -->
+                <div class="col-xl-3 col-md-6">
+                    <div class="stat-card stat-card-green">
+                        <div class="stat-card-body">
+                            <div class="stat-card-icon">
+                                <i class="fas fa-hand-holding"></i>
+                            </div>
+                            <div class="stat-card-content">
+                                <div class="stat-card-number"><?= number_format($statPeminjaman); ?></div>
+                                <div class="stat-card-label">Total Peminjaman</div>
+                            </div>
                         </div>
-                        <div class="fs-2 fw-bold"><?= $statPengembalian; ?></div>
-                        <small class="opacity-75">Total pengembalian tercatat</small>
+                        <a href="peminjaman.php" class="stat-card-footer">
+                            <span>Kelola</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </a>
                     </div>
                 </div>
-                <div class="card-footer d-flex justify-content-between align-items-center">
-                    <a class="text-white small" href="pengembalian.php">Periksa Pengembalian</a>
-                    <i class="fas fa-arrow-right"></i>
-                </div>
-            </div>
-        </div>
 
-        <!-- Tindak Lanjut -->
-        <div class="col-xl-4 col-md-6 mb-3">
-            <div class="card bg-secondary text-white h-100 quick-card">
-                <div class="card-body">
-                    <div>
-                        <div class="fw-semibold mb-1">
-                            <i class="fas fa-tools me-2"></i> Tindak Lanjut
+                <!-- Usulan Card -->
+                <div class="col-xl-3 col-md-6">
+                    <div class="stat-card stat-card-orange">
+                        <div class="stat-card-body">
+                            <div class="stat-card-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="stat-card-content">
+                                <div class="stat-card-number"><?= number_format($statUsulan); ?></div>
+                                <div class="stat-card-label">Usulan Pending</div>
+                            </div>
                         </div>
-                        <div class="fs-2 fw-bold"><?= $statTindakLanjut; ?></div>
-                        <small class="opacity-75">Kasus tindak lanjut kerusakan</small>
+                        <a href="peminjaman.php?status=usulan" class="stat-card-footer">
+                            <span>Proses</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </a>
                     </div>
                 </div>
-                <div class="card-footer d-flex justify-content-between align-items-center">
-                    <a class="text-white small" href="tindaklanjut.php">Kelola Tindak Lanjut</a>
-                    <i class="fas fa-arrow-right"></i>
-                </div>
             </div>
-        </div>
 
-        <!-- Laporan -->
-        <div class="col-xl-4 col-md-6 mb-3">
-            <div class="card bg-info text-white h-100 quick-card">
-                <div class="card-body">
-                    <div>
-                        <div class="fw-semibold mb-1">
-                            <i class="fas fa-chart-line me-2"></i> Laporan
+            <!-- Charts Section -->
+            <div class="row g-4 mb-4">
+                <!-- Peminjaman Chart -->
+                <div class="col-xl-8">
+                    <div class="chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-card-title-group">
+                                <h5 class="chart-card-title">
+                                    <i class="fas fa-chart-line"></i>
+                                    Grafik Peminjaman per Bulan
+                                </h5>
+                                <p class="chart-card-subtitle">Tahun <?= $tahunSekarang; ?></p>
+                            </div>
+                            <div class="chart-card-legend">
+                                <span class="legend-item">
+                                    <span class="legend-dot bg-primary"></span>
+                                    Peminjaman
+                                </span>
+                            </div>
                         </div>
-                        <div class="fs-2 fw-bold"><?= $statLaporan; ?></div>
-                        <small class="opacity-75">Total aktivitas (pinjam + kembali)</small>
+                        <div class="chart-card-body">
+                            <canvas id="chartPeminjaman"></canvas>
+                        </div>
                     </div>
                 </div>
-                <div class="card-footer d-flex justify-content-between align-items-center">
-                    <a class="text-white small" href="laporan.php">Lihat Laporan</a>
-                    <i class="fas fa-arrow-right"></i>
+
+                <!-- Quick Stats -->
+                <div class="col-xl-4">
+                    <div class="quick-stats-card">
+                        <div class="quick-stats-header">
+                            <h5 class="quick-stats-title">
+                                <i class="fas fa-chart-pie"></i>
+                                Statistik Cepat
+                            </h5>
+                        </div>
+                        <div class="quick-stats-body">
+                            
+                            <div class="quick-stat-item">
+                                <div class="quick-stat-icon bg-success">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                                <div class="quick-stat-content">
+                                    <div class="quick-stat-value"><?= number_format($statPengembalian); ?></div>
+                                    <div class="quick-stat-label">Pengembalian</div>
+                                </div>
+                            </div>
+
+                            <div class="quick-stat-item">
+                                <div class="quick-stat-icon bg-warning">
+                                    <i class="fas fa-tools"></i>
+                                </div>
+                                <div class="quick-stat-content">
+                                    <div class="quick-stat-value"><?= number_format($statTindakLanjut); ?></div>
+                                    <div class="quick-stat-label">Tindak Lanjut</div>
+                                </div>
+                            </div>
+
+                            <div class="quick-stat-item">
+                                <div class="quick-stat-icon bg-info">
+                                    <i class="fas fa-percentage"></i>
+                                </div>
+                                <div class="quick-stat-content">
+                                    <div class="quick-stat-value">
+                                        <?php 
+                                        $persentase = $statPeminjaman > 0 ? round(($statPengembalian / $statPeminjaman) * 100) : 0;
+                                        echo $persentase . '%';
+                                        ?>
+                                    </div>
+                                    <div class="quick-stat-label">Tingkat Pengembalian</div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <!-- GRAFIK -->
-    <div class="row mb-4">
-        <div class="col-xl-6 mb-4">
-            <div class="card h-100">
-                <div class="card-header bg-info text-white">
-                    <i class="fas fa-chart-line me-2"></i> Grafik Peminjaman per Bulan (<?= $tahunSekarang; ?>)
+            <!-- Charts & Activity -->
+            <div class="row g-4 mb-4">
+                <!-- Kondisi Chart -->
+                <div class="col-xl-6">
+                    <div class="chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-card-title-group">
+                                <h5 class="chart-card-title">
+                                    <i class="fas fa-chart-bar"></i>
+                                    Kondisi Pengembalian
+                                </h5>
+                                <p class="chart-card-subtitle">Tahun <?= $tahunSekarang; ?></p>
+                            </div>
+                            <div class="chart-card-legend">
+                                <span class="legend-item">
+                                    <span class="legend-dot bg-success"></span>
+                                    Baik
+                                </span>
+                                <span class="legend-item">
+                                    <span class="legend-dot bg-danger"></span>
+                                    Rusak
+                                </span>
+                            </div>
+                        </div>
+                        <div class="chart-card-body">
+                            <canvas id="chartKondisi"></canvas>
+                        </div>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <canvas id="chartPeminjaman" height="150"></canvas>
+
+                <!-- Recent Activity -->
+                <div class="col-xl-6">
+                    <div class="activity-card">
+                        <div class="activity-card-header">
+                            <h5 class="activity-card-title">
+                                <i class="fas fa-history"></i>
+                                Peminjaman Terbaru
+                            </h5>
+                            <a href="peminjaman.php" class="activity-card-link">
+                                Lihat Semua
+                                <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                        <div class="activity-card-body">
+                            <?php if (empty($peminjamanTerbaru)): ?>
+                                <div class="empty-state">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>Belum ada peminjaman</p>
+                                </div>
+                            <?php else: ?>
+                                <?php foreach ($peminjamanTerbaru as $item): 
+                                    $status = strtolower($item['status']);
+                                    $statusClass = 'secondary';
+                                    $statusIcon = 'circle';
+                                    
+                                    switch ($status) {
+                                        case 'usulan':
+                                            $statusClass = 'warning';
+                                            $statusIcon = 'clock';
+                                            break;
+                                        case 'diterima':
+                                            $statusClass = 'success';
+                                            $statusIcon = 'check-circle';
+                                            break;
+                                        case 'ditolak':
+                                            $statusClass = 'danger';
+                                            $statusIcon = 'times-circle';
+                                            break;
+                                        case 'selesai':
+                                            $statusClass = 'info';
+                                            $statusIcon = 'check-double';
+                                            break;
+                                    }
+                                ?>
+                                    <div class="activity-item">
+                                        <div class="activity-icon bg-<?= $statusClass; ?>">
+                                            <i class="fas fa-<?= $statusIcon; ?>"></i>
+                                        </div>
+                                        <div class="activity-content">
+                                            <div class="activity-title">
+                                                #<?= $item['id_pinjam']; ?> - <?= htmlspecialchars($item['nama_peminjam']); ?>
+                                            </div>
+                                            <div class="activity-subtitle">
+                                                <?= htmlspecialchars($item['fasilitas'] ?? 'N/A'); ?>
+                                            </div>
+                                            <div class="activity-meta">
+                                                <i class="far fa-calendar-alt"></i>
+                                                <?= date('d M Y', strtotime($item['tanggal_mulai'])); ?>
+                                            </div>
+                                        </div>
+                                        <span class="activity-badge bg-<?= $statusClass; ?>">
+                                            <?= ucfirst($status); ?>
+                                        </span>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
             </div>
+
         </div>
-        <div class="col-xl-6 mb-4">
-            <div class="card h-100">
-                <div class="card-header bg-success text-white">
-                    <i class="fas fa-chart-bar me-2"></i> Grafik Kondisi Pengembalian per Bulan (<?= $tahunSekarang; ?>)
-                </div>
-                <div class="card-body">
-                    <canvas id="chartKondisi" height="150"></canvas>
-                </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer-admin">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+            </div>
+            <div>
+                Version 1.0
             </div>
         </div>
-    </div>
+    </footer>
 
-</div><!-- /container-fluid -->
+</div>
 
-<!-- SCRIPT KHUSUS DASHBOARD -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<?php include '../includes/admin/footer.php'; ?>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 <script>
-    // Toggle sidebar
-    document.getElementById('sidebarToggle')?.addEventListener('click', function () {
-        document.body.classList.toggle('sb-sidenav-toggled');
-    });
-
-    // Data grafik dari PHP
+document.addEventListener('DOMContentLoaded', function() {
+    
+    // Sidebar Toggle
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            document.body.classList.toggle('sb-sidenav-toggled');
+            localStorage.setItem('sb|sidebar-toggle', document.body.classList.contains('sb-sidenav-toggled'));
+        });
+    }
+    
+    // Restore sidebar state
+    if (localStorage.getItem('sb|sidebar-toggle') === 'true') {
+        document.body.classList.add('sb-sidenav-toggled');
+    }
+    
+    // Chart Peminjaman
     const bulanLabelsPeminjaman = <?= json_encode($bulanLabelsPeminjaman) ?>;
-    const dataPeminjaman        = <?= json_encode($peminjamanData) ?>;
+    const dataPeminjaman = <?= json_encode($peminjamanData) ?>;
 
     const ctxPeminjaman = document.getElementById('chartPeminjaman');
     if (ctxPeminjaman) {
         new Chart(ctxPeminjaman, {
             type: 'line',
             data: {
-                labels: bulanLabelsPeminjaman,
+                labels: bulanLabelsPeminjaman.length > 0 ? bulanLabelsPeminjaman : ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'],
                 datasets: [{
-                    label: 'Jumlah Peminjaman (<?= $tahunSekarang; ?>)',
-                    data: dataPeminjaman,
-                    backgroundColor: 'rgba(13,202,240,0.15)',
-                    borderColor: '#0dcaf0',
-                    borderWidth: 2,
+                    label: 'Jumlah Peminjaman',
+                    data: dataPeminjaman.length > 0 ? dataPeminjaman : Array(12).fill(0),
+                    backgroundColor: 'rgba(11, 44, 97, 0.1)',
+                    borderColor: '#0b2c61',
+                    borderWidth: 3,
                     fill: true,
-                    tension: 0.3,
-                    pointRadius: 4,
-                    pointHoverRadius: 6
+                    tension: 0.4,
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    pointBackgroundColor: '#0b2c61',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
                 }]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(11, 44, 97, 0.9)',
+                        padding: 12,
+                        borderColor: '#ffb703',
+                        borderWidth: 1
+                    }
+                },
                 scales: {
-                    y: {beginAtZero: true, ticks: {precision: 0}}
+                    y: {
+                        beginAtZero: true,
+                        ticks: { precision: 0, color: '#64748b' },
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' }
+                    },
+                    x: {
+                        ticks: { color: '#64748b' },
+                        grid: { display: false }
+                    }
                 }
             }
         });
     }
 
+    // Chart Kondisi
     const bulanLabelsKondisi = <?= json_encode($bulanLabelsKondisi) ?>;
-    const dataKondisiBagus   = <?= json_encode($dataKondisiBagus) ?>;
-    const dataKondisiRusak   = <?= json_encode($dataKondisiRusak) ?>;
+    const dataKondisiBaik = <?= json_encode($dataKondisiBaik) ?>;
+    const dataKondisiRusak = <?= json_encode($dataKondisiRusak) ?>;
 
     const ctxKondisi = document.getElementById('chartKondisi');
     if (ctxKondisi) {
         new Chart(ctxKondisi, {
             type: 'bar',
             data: {
-                labels: bulanLabelsKondisi,
+                labels: bulanLabelsKondisi.length > 0 ? bulanLabelsKondisi : ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'],
                 datasets: [
-                    { label: 'Bagus', data: dataKondisiBagus, backgroundColor: '#198754' },
-                    { label: 'Rusak', data: dataKondisiRusak, backgroundColor: '#dc3545' }
+                    {
+                        label: 'Baik',
+                        data: dataKondisiBaik.length > 0 ? dataKondisiBaik : Array(12).fill(0),
+                        backgroundColor: '#16a34a',
+                        borderRadius: 8
+                    },
+                    {
+                        label: 'Rusak',
+                        data: dataKondisiRusak.length > 0 ? dataKondisiRusak : Array(12).fill(0),
+                        backgroundColor: '#dc2626',
+                        borderRadius: 8
+                    }
                 ]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(11, 44, 97, 0.9)',
+                        padding: 12,
+                        borderColor: '#ffb703',
+                        borderWidth: 1
+                    }
+                },
                 scales: {
-                    y: { beginAtZero: true, ticks: { precision: 0 } }
+                    y: {
+                        beginAtZero: true,
+                        ticks: { precision: 0, color: '#64748b' },
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' }
+                    },
+                    x: {
+                        ticks: { color: '#64748b' },
+                        grid: { display: false }
+                    }
                 }
             }
         });
     }
+});
 </script>
-
-<?php
-include '../includes/admin/footer.php';
-?>

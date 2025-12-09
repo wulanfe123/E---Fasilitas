@@ -6,21 +6,26 @@ if (!isset($_SESSION['id_user'])) {
 }
 
 include '../config/koneksi.php';
+include '../config/notifikasi_helper.php';
 
-$id_user   = isset($_SESSION['id_user']) ? (int) $_SESSION['id_user'] : 0;
-$nama_user = $_SESSION['nama_user'] ?? 'Peminjam';
-
-if ($id_user <= 0) {
+/* =========================================================
+   VALIDASI SESSION USER DENGAN KETAT
+   ========================================================= */
+$id_user = filter_var($_SESSION['id_user'], FILTER_VALIDATE_INT);
+if ($id_user === false || $id_user <= 0) {
     session_destroy();
     header("Location: ../auth/login.php");
     exit;
 }
 
+// Nama user untuk keperluan display (opsional)
+$nama_user = htmlspecialchars($_SESSION['nama_user'] ?? $_SESSION['nama'] ?? 'Peminjam', ENT_QUOTES, 'UTF-8');
+
 /* =========================================================
    HANYA TERIMA METODE POST
    ========================================================= */
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: peminjaman.php");
+    header("Location: form_peminjaman.php");
     exit;
 }
 
@@ -44,8 +49,8 @@ if (!is_array($fasilitas) || count($fasilitas) === 0) {
 }
 
 /* ---- 2. TANGGAL MULAI & SELESAI (WAJIB) ---- */
-$tanggal_mulai   = $_POST['tanggal_mulai']   ?? '';
-$tanggal_selesai = $_POST['tanggal_selesai'] ?? '';
+$tanggal_mulai   = trim($_POST['tanggal_mulai']   ?? '');
+$tanggal_selesai = trim($_POST['tanggal_selesai'] ?? '');
 
 $patternDate = '/^\d{4}-\d{2}-\d{2}$/';
 
@@ -65,22 +70,30 @@ if ($tanggal_mulai !== '' && $tanggal_selesai !== '' && $tanggal_selesai < $tang
     $errors[] = "Tanggal selesai tidak boleh sebelum tanggal mulai.";
 }
 
-/* ---- 3. CATATAN (OPSIONAL, SANITASI) ---- */
+/* ---- 3. CATATAN (WAJIB, MIN 20 KARAKTER) ---- */
 $catatan = trim($_POST['catatan'] ?? '');
-if (strlen($catatan) > 1000) {
-    $errors[] = "Catatan terlalu panjang (maksimal 1000 karakter).";
+
+if ($catatan === '') {
+    $errors[] = "Catatan wajib diisi.";
+} elseif (mb_strlen($catatan) < 20) {
+    $errors[] = "Catatan terlalu pendek (minimal 20 karakter).";
+} elseif (mb_strlen($catatan) > 500) {
+    $errors[] = "Catatan terlalu panjang (maksimal 500 karakter).";
 }
 
-/* ---- 4. FILE DOKUMEN (OPSIONAL, HANYA PDF) ---- */
+/* ---- 4. FILE DOKUMEN (WAJIB, HANYA PDF) ---- */
 $uploadDir   = __DIR__ . '/../uploads/dokumen_peminjaman/';
-$relativeDir = '../uploads/dokumen_peminjaman/'; // disimpan di DB
+$relativeDir = '../uploads/dokumen_peminjaman/';
 $dokumenPath = null;
 
 if (!is_dir($uploadDir)) {
     @mkdir($uploadDir, 0775, true);
 }
 
-if (isset($_FILES['dokumen_peminjaman']) && $_FILES['dokumen_peminjaman']['error'] !== UPLOAD_ERR_NO_FILE) {
+$file = null;
+if (!isset($_FILES['dokumen_peminjaman']) || $_FILES['dokumen_peminjaman']['error'] === UPLOAD_ERR_NO_FILE) {
+    $errors[] = "Dokumen peminjaman wajib diupload (format PDF).";
+} else {
     $file      = $_FILES['dokumen_peminjaman'];
     $err       = $file['error'];
     $fileName  = $file['name'];
@@ -97,10 +110,19 @@ if (isset($_FILES['dokumen_peminjaman']) && $_FILES['dokumen_peminjaman']['error
             $errors[] = "Jenis file harus PDF.";
         }
 
-        // Batas ukuran 2MB
-        $maxSize = 2 * 1024 * 1024;
+        // Batas ukuran 5MB
+        $maxSize = 5 * 1024 * 1024;
         if ($fileSize > $maxSize) {
-            $errors[] = "Ukuran file maksimal 2MB.";
+            $errors[] = "Ukuran file maksimal 5MB.";
+        }
+        
+        // Validasi MIME type untuk keamanan
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $tmpName);
+        finfo_close($finfo);
+        
+        if ($mimeType !== 'application/pdf') {
+            $errors[] = "File bukan PDF asli. Upload ditolak.";
         }
     }
 }
@@ -117,7 +139,7 @@ if (!empty($errors)) {
 /* =========================================================
    JIKA ADA FILE & VALID, PINDAHKAN KE FOLDER UPLOAD
    ========================================================= */
-if (isset($file) && $file['error'] === UPLOAD_ERR_OK && empty($errors)) {
+if ($file && $file['error'] === UPLOAD_ERR_OK) {
     $safeName = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', $fileName);
     $newName  = 'peminjaman_' . $id_user . '_' . time() . '_' . $safeName;
     $target   = $uploadDir . $newName;
@@ -189,27 +211,16 @@ try {
     }
     $stmtDF->close();
 
-    /* ---------- 3) NOTIFIKASI UNTUK PEMINJAM ---------- */
-    $sqlNotif = "
-        INSERT INTO notifikasi (id_user, id_pinjam, judul, pesan, tipe, is_read, created_at)
-        VALUES (?, ?, ?, ?, ?, 0, NOW())
-    ";
-    $stmtN = $conn->prepare($sqlNotif);
-    if ($stmtN) {
-        $judulNotif = "Pengajuan Peminjaman Dikirim";
-        $pesanNotif = "Permohonan peminjaman fasilitas Anda telah berhasil dikirim dan berstatus USULAN. Silakan menunggu persetujuan dari Bagian Umum.";
-        $tipe       = "peminjaman";
-
-        $stmtN->bind_param("iisss", $id_user, $id_pinjam_baru, $judulNotif, $pesanNotif, $tipe);
-        $stmtN->execute();
-        $stmtN->close();
-    }
-
-    /* ---------- 4) COMMIT TRANSAKSI ---------- */
+    /* ---------- 3) COMMIT TRANSAKSI ---------- */
     $conn->commit();
 
-    $_SESSION['success'] = "Pengajuan peminjaman berhasil dikirim. Silakan pantau status pada menu 'Peminjaman'.";
-    header("Location: peminjaman.php");
+    /* ========================================================= 
+       4) KIRIM NOTIFIKASI SETELAH DATA BERHASIL TERSIMPAN
+       ========================================================= */
+    notif_peminjaman_baru($conn, $id_pinjam_baru, $id_user);
+
+    $_SESSION['success'] = "Pengajuan peminjaman berhasil dikirim. Silakan pantau status pada menu 'Peminjaman Saya'.";
+    header("Location: peminjaman_saya.php");
     exit;
 
 } catch (Exception $e) {
@@ -220,7 +231,7 @@ try {
         @unlink($uploadDir . basename($dokumenPath));
     }
 
-    $_SESSION['error'] = "Terjadi kesalahan: " . $e->getMessage();
+    $_SESSION['error'] = "Terjadi kesalahan: " . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
     header("Location: form_peminjaman.php");
     exit;
 }

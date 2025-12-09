@@ -4,112 +4,184 @@ if (!isset($_SESSION['id_user'])) {
     header("Location: ../auth/login.php");
     exit;
 }
+
 include '../config/koneksi.php';
+include '../config/notifikasi_helper.php';
 
-$id_user   = isset($_SESSION['id_user']) ? (int) $_SESSION['id_user'] : 0;
-$nama_user = $_SESSION['nama_user'] ?? 'Peminjam';
-
-if ($id_user <= 0) {
+// Validasi ID user dari session dengan ketat
+$id_user = filter_var($_SESSION['id_user'], FILTER_VALIDATE_INT);
+if ($id_user === false || $id_user <= 0) {
     session_destroy();
     header("Location: ../auth/login.php");
     exit;
 }
 
-$id_pinjam = isset($_GET['id']) ? (int) $_GET['id'] : 0;
-if ($id_pinjam <= 0) {
-    $_SESSION['error'] = "Peminjaman tidak valid.";
+$nama_user = htmlspecialchars($_SESSION['nama'] ?? 'Peminjam', ENT_QUOTES, 'UTF-8');
+
+// Set page variables
+$pageTitle = 'Edit Peminjaman';
+$currentPage = 'peminjaman';
+
+// Validasi ID peminjaman dari URL
+$id_pinjam = filter_var($_GET['id'] ?? 0, FILTER_VALIDATE_INT);
+if ($id_pinjam === false || $id_pinjam <= 0) {
+    $_SESSION['error'] = "ID peminjaman tidak valid.";
     header("Location: peminjaman_saya.php");
     exit;
 }
 
 $errors = [];
+$success = [];
 
 /* ==========================================================
    1) AMBIL DATA PEMINJAMAN (PREPARED STATEMENT)
    ========================================================== */
-$sqlDetail = "SELECT * FROM peminjaman WHERE id_pinjam = ? AND id_user = ? LIMIT 1";
+$sqlDetail = "
+    SELECT 
+        p.*,
+        COALESCE(GROUP_CONCAT(DISTINCT f.nama_fasilitas ORDER BY f.nama_fasilitas SEPARATOR ', '), '-') AS fasilitas_list
+    FROM peminjaman p
+    LEFT JOIN daftar_peminjaman_fasilitas df ON p.id_pinjam = df.id_pinjam
+    LEFT JOIN fasilitas f ON df.id_fasilitas = f.id_fasilitas
+    WHERE p.id_pinjam = ? AND p.id_user = ?
+    GROUP BY p.id_pinjam
+    LIMIT 1
+";
+
 $stmtDetail = $conn->prepare($sqlDetail);
 if (!$stmtDetail) {
-    die("Query error: " . $conn->error);
+    die("Query error: " . htmlspecialchars($conn->error, ENT_QUOTES, 'UTF-8'));
 }
+
 $stmtDetail->bind_param("ii", $id_pinjam, $id_user);
 $stmtDetail->execute();
 $resDetail = $stmtDetail->get_result();
 
 if ($resDetail->num_rows === 0) {
-    $_SESSION['error'] = "Data peminjaman tidak ditemukan.";
+    $_SESSION['error'] = "Data peminjaman tidak ditemukan atau Anda tidak memiliki akses.";
     $stmtDetail->close();
     header("Location: peminjaman_saya.php");
     exit;
 }
+
 $data = $resDetail->fetch_assoc();
 $stmtDetail->close();
+
+// Cek status - hanya usulan yang bisa diedit
+$status_peminjaman = strtolower($data['status'] ?? '');
+if ($status_peminjaman !== 'usulan') {
+    $_SESSION['error'] = "Hanya peminjaman dengan status 'Usulan' yang dapat diedit.";
+    header("Location: detail_peminjaman.php?id=" . $id_pinjam);
+    exit;
+}
 
 /* ==========================================================
    2) PROSES UPDATE PEMINJAMAN (VALIDASI + PREPARED STATEMENT)
    ========================================================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // --- Ambil input & trim ---
-    $tanggal_mulai   = trim($_POST['tanggal_mulai']   ?? '');
-    $tanggal_selesai = trim($_POST['tanggal_selesai'] ?? '');
-    $catatan         = trim($_POST['catatan']         ?? '');
+    // CSRF Token Validation (opsional tapi disarankan)
+    // if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+    //     $errors[] = "Invalid CSRF token.";
+    // }
+
+    // --- Ambil input & sanitasi ---
+    $tanggal_mulai = filter_input(INPUT_POST, 'tanggal_mulai', FILTER_SANITIZE_STRING);
+    $tanggal_selesai = filter_input(INPUT_POST, 'tanggal_selesai', FILTER_SANITIZE_STRING);
+    $catatan = trim($_POST['catatan'] ?? '');
+
+    // Sanitasi catatan
+    $catatan = htmlspecialchars($catatan, ENT_QUOTES, 'UTF-8');
 
     // --- Validasi tanggal (format & logika) ---
-    if ($tanggal_mulai === '' || $tanggal_selesai === '') {
+    if (empty($tanggal_mulai) || empty($tanggal_selesai)) {
         $errors[] = "Tanggal mulai dan tanggal selesai wajib diisi.";
     } else {
-        $dMulai   = DateTime::createFromFormat('Y-m-d', $tanggal_mulai);
+        $dMulai = DateTime::createFromFormat('Y-m-d', $tanggal_mulai);
         $dSelesai = DateTime::createFromFormat('Y-m-d', $tanggal_selesai);
-        $isValidMulai   = $dMulai && $dMulai->format('Y-m-d') === $tanggal_mulai;
+        $isValidMulai = $dMulai && $dMulai->format('Y-m-d') === $tanggal_mulai;
         $isValidSelesai = $dSelesai && $dSelesai->format('Y-m-d') === $tanggal_selesai;
 
         if (!$isValidMulai || !$isValidSelesai) {
-            $errors[] = "Format tanggal tidak valid.";
+            $errors[] = "Format tanggal tidak valid. Gunakan format YYYY-MM-DD.";
         } else {
             // Tidak boleh tanggal selesai < tanggal mulai
             if ($tanggal_selesai < $tanggal_mulai) {
                 $errors[] = "Tanggal selesai tidak boleh lebih awal dari tanggal mulai.";
             }
 
-            // (opsional) Tidak boleh sebelum hari ini
+            // Validasi: tidak boleh sebelum hari ini
             $today = date('Y-m-d');
             if ($tanggal_mulai < $today) {
                 $errors[] = "Tanggal mulai tidak boleh sebelum hari ini.";
             }
+
+            // Validasi: maksimal peminjaman 30 hari
+            $diff = $dMulai->diff($dSelesai);
+            if ($diff->days > 30) {
+                $errors[] = "Durasi peminjaman maksimal 30 hari.";
+            }
         }
     }
 
+    // Validasi panjang catatan
+    if (mb_strlen($catatan) > 500) {
+        $errors[] = "Catatan maksimal 500 karakter.";
+    }
+
     // --- Validasi file (jika ada) -> hanya PDF ---
-    $dokumen_name = $data['dokumen_peminjaman']; // nilai lama (bisa null/empty)
+    $dokumen_name = $data['dokumen_peminjaman']; // nilai lama
+    $old_dokumen = $dokumen_name; // Simpan untuk dihapus jika ada upload baru
+
     if (!empty($_FILES['dokumen_peminjaman']['name'])) {
-        $file      = $_FILES['dokumen_peminjaman'];
-        $fileName  = $file['name'];
-        $fileTmp   = $file['tmp_name'];
-        $fileSize  = $file['size'];
+        $file = $_FILES['dokumen_peminjaman'];
+        $fileName = $file['name'];
+        $fileTmp = $file['tmp_name'];
+        $fileSize = $file['size'];
         $fileError = $file['error'];
 
         if ($fileError === UPLOAD_ERR_OK) {
+            // Validasi extension
             $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-            if ($ext !== 'pdf') {
+            $allowedExt = ['pdf'];
+            
+            if (!in_array($ext, $allowedExt)) {
                 $errors[] = "Dokumen peminjaman harus berformat PDF.";
             } else {
-                // Batas ukuran misal 2MB
-                if ($fileSize > 2 * 1024 * 1024) {
-                    $errors[] = "Ukuran file maksimal 2MB.";
+                // Validasi MIME type untuk keamanan ekstra
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mimeType = finfo_file($finfo, $fileTmp);
+                finfo_close($finfo);
+                
+                if ($mimeType !== 'application/pdf') {
+                    $errors[] = "File yang diupload bukan PDF valid.";
                 } else {
-                    $targetDir = "../uploads/dokumen/";
-                    if (!is_dir($targetDir)) {
-                        @mkdir($targetDir, 0775, true);
-                    }
-
-                    $newName = time() . "_" . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $fileName);
-                    $targetFilePath = $targetDir . $newName;
-
-                    if (move_uploaded_file($fileTmp, $targetFilePath)) {
-                        $dokumen_name = $newName;
+                    // Validasi ukuran (2MB)
+                    $maxSize = 2 * 1024 * 1024;
+                    if ($fileSize > $maxSize) {
+                        $errors[] = "Ukuran file maksimal 2MB.";
                     } else {
-                        $errors[] = "Gagal mengupload dokumen peminjaman.";
+                        $targetDir = "../uploads/dokumen/";
+                        if (!is_dir($targetDir)) {
+                            if (!@mkdir($targetDir, 0755, true)) {
+                                $errors[] = "Gagal membuat direktori upload.";
+                            }
+                        }
+
+                        // Generate nama file yang aman
+                        $safeName = preg_replace('/[^a-zA-Z0-9_\.-]/', '_', pathinfo($fileName, PATHINFO_FILENAME));
+                        $newName = time() . "_" . $id_user . "_" . $safeName . "." . $ext;
+                        $targetFilePath = $targetDir . $newName;
+
+                        if (move_uploaded_file($fileTmp, $targetFilePath)) {
+                            // Hapus file lama jika ada
+                            if (!empty($old_dokumen) && file_exists($targetDir . $old_dokumen)) {
+                                @unlink($targetDir . $old_dokumen);
+                            }
+                            $dokumen_name = $newName;
+                        } else {
+                            $errors[] = "Gagal mengupload dokumen peminjaman.";
+                        }
                     }
                 }
             }
@@ -122,16 +194,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         $sqlUpdate = "
             UPDATE peminjaman 
-            SET tanggal_mulai = ?, 
+            SET 
+                tanggal_mulai = ?, 
                 tanggal_selesai = ?, 
                 catatan = ?, 
-                dokumen_peminjaman = ?
-            WHERE id_pinjam = ? AND id_user = ?
+                dokumen_peminjaman = ?,
+                updated_at = NOW()
+            WHERE id_pinjam = ? AND id_user = ? AND status = 'usulan'
             LIMIT 1
         ";
+        
         $stmtUpdate = $conn->prepare($sqlUpdate);
         if (!$stmtUpdate) {
-            $errors[] = "Gagal menyiapkan query update: " . $conn->error;
+            $errors[] = "Gagal menyiapkan query update: " . htmlspecialchars($conn->error, ENT_QUOTES, 'UTF-8');
         } else {
             $stmtUpdate->bind_param(
                 "ssssii",
@@ -144,106 +219,376 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
 
             if ($stmtUpdate->execute()) {
-                $stmtUpdate->close();
-                $_SESSION['success'] = "Data peminjaman berhasil diperbarui.";
-                header("Location: detail_peminjaman.php?id=" . $id_pinjam);
-                exit;
+                if ($stmtUpdate->affected_rows > 0) {
+                    $stmtUpdate->close();
+                    $_SESSION['success'] = "Data peminjaman berhasil diperbarui.";
+                    header("Location: detail_peminjaman.php?id=" . $id_pinjam);
+                    exit;
+                } else {
+                    $errors[] = "Tidak ada perubahan data atau peminjaman sudah tidak bisa diedit.";
+                }
             } else {
-                $errors[] = "Gagal memperbarui data peminjaman. Silakan coba lagi.";
-                $stmtUpdate->close();
+                $errors[] = "Gagal memperbarui data peminjaman: " . htmlspecialchars($stmtUpdate->error, ENT_QUOTES, 'UTF-8');
             }
+            $stmtUpdate->close();
         }
     }
 
-    // Kalau ada error, variabel $data di-refresh supaya form tetap berisi input terakhir
-    $data['tanggal_mulai']      = $tanggal_mulai;
-    $data['tanggal_selesai']    = $tanggal_selesai;
-    $data['catatan']            = $catatan;
-    $data['dokumen_peminjaman'] = $dokumen_name;
+    // Kalau ada error, refresh data dengan input terakhir
+    if (!empty($errors)) {
+        $data['tanggal_mulai'] = $tanggal_mulai;
+        $data['tanggal_selesai'] = $tanggal_selesai;
+        $data['catatan'] = $catatan;
+        $data['dokumen_peminjaman'] = $dokumen_name;
+    }
 }
 
+// Generate CSRF token
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// Sanitasi data untuk ditampilkan
+$fasilitas_list = htmlspecialchars($data['fasilitas_list'] ?? '-', ENT_QUOTES, 'UTF-8');
+$tanggal_mulai_display = htmlspecialchars($data['tanggal_mulai'], ENT_QUOTES, 'UTF-8');
+$tanggal_selesai_display = htmlspecialchars($data['tanggal_selesai'], ENT_QUOTES, 'UTF-8');
+$catatan_display = htmlspecialchars($data['catatan'] ?? '', ENT_QUOTES, 'UTF-8');
+$dokumen_display = htmlspecialchars($data['dokumen_peminjaman'] ?? '', ENT_QUOTES, 'UTF-8');
+
 /* ==========================================================
-   3) LOAD HEADER & NAVBAR KHUSUS PEMINJAM
+   3) LOAD HEADER & NAVBAR
    ========================================================== */
-include '../includes/peminjam/header.php';   // sudah ada <head>, link CSS, dan <body>
-include '../includes/peminjam/navbar.php';   // navbar peminjam (home/fasilitas/dll)
+include '../includes/peminjam/header.php';
+include '../includes/peminjam/navbar.php';
 ?>
+
+<style>
+    /* ======== HERO SECTION ======== */
+    .hero-section {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        padding: 60px 0;
+        color: white;
+        margin-bottom: 40px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .hero-section::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 50%;
+        height: 100%;
+        background: url('../assets/img/gedung.jpg') center/cover no-repeat;
+        opacity: 0.1;
+    }
+
+    .hero-section h2 {
+        color: white !important;
+        font-size: 2.5rem;
+        font-weight: 800;
+        text-shadow: 2px 2px 10px rgba(0, 0, 0, 0.2);
+        position: relative;
+        z-index: 2;
+    }
+
+    .hero-section p {
+        color: rgba(255, 255, 255, 0.95) !important;
+        font-size: 1.1rem;
+        font-weight: 300;
+        position: relative;
+        z-index: 2;
+    }
+
+    /* ======== FORM CARD ======== */
+    .card-form {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(11, 44, 97, 0.1);
+        border: none;
+        padding: 35px !important;
+    }
+
+    .form-label {
+        font-weight: 700;
+        color: var(--primary-color);
+        margin-bottom: 8px;
+        font-size: 0.95rem;
+    }
+
+    .form-control,
+    .form-select {
+        border: 2px solid var(--border-color);
+        border-radius: 12px;
+        padding: 12px 18px;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 0.2rem rgba(11, 44, 97, 0.15);
+    }
+
+    textarea.form-control {
+        resize: vertical;
+        min-height: 100px;
+    }
+
+    /* ======== FILE INPUT ======== */
+    .form-control[type="file"] {
+        padding: 10px;
+    }
+
+    .form-control[type="file"]::file-selector-button {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        color: white;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 8px;
+        margin-right: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .form-control[type="file"]::file-selector-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(11, 44, 97, 0.2);
+    }
+
+    /* ======== ALERTS ======== */
+    .alert {
+        border-radius: 15px;
+        border: none;
+        padding: 18px 24px;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    .alert-danger {
+        background: linear-gradient(135deg, #fee2e2, #fecaca);
+        color: #991b1b;
+        border-left: 4px solid var(--danger-color);
+    }
+
+    .alert-danger ul {
+        padding-left: 20px;
+        margin-bottom: 0;
+    }
+
+    .alert-info {
+        background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+        color: #1e40af;
+        border-left: 4px solid #3b82f6;
+    }
+
+    /* ======== BUTTONS ======== */
+    .btn-outline-secondary {
+        border: 2px solid var(--border-color);
+        color: var(--muted-text);
+        border-radius: 12px;
+        padding: 12px 28px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .btn-outline-secondary:hover {
+        background: var(--primary-color);
+        border-color: var(--primary-color);
+        color: white;
+        transform: translateY(-2px);
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        border: none;
+        border-radius: 12px;
+        padding: 12px 32px;
+        font-weight: 700;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(11, 44, 97, 0.2);
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(11, 44, 97, 0.3);
+    }
+
+    /* ======== INFO BOX ======== */
+    .info-box {
+        background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+        border: 2px solid #bae6fd;
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 25px;
+    }
+
+    .info-box h6 {
+        color: var(--primary-color);
+        font-weight: 700;
+        margin-bottom: 10px;
+    }
+
+    .info-box p {
+        margin-bottom: 5px;
+        color: var(--dark-text);
+    }
+
+    /* ======== RESPONSIVE ======== */
+    @media (max-width: 768px) {
+        .hero-section h2 {
+            font-size: 2rem;
+        }
+
+        .hero-section p {
+            font-size: 1rem;
+        }
+
+        .card-form {
+            padding: 25px !important;
+        }
+
+        .d-flex.justify-content-between {
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .d-flex.justify-content-between .btn {
+            width: 100%;
+        }
+    }
+</style>
 
 <section class="hero-section text-center">
     <div class="container">
-        <h2 class="fw-bold mb-1">Edit Peminjaman</h2>
-        <p class="mb-1 text-muted">
-            Perbarui data peminjaman fasilitas yang sudah kamu ajukan.
+        <h2 class="fw-bold mb-3" data-aos="fade-up">
+            <i class="bi bi-pencil-square me-2"></i>Edit Peminjaman
+        </h2>
+        <p class="mb-0" data-aos="fade-up" data-aos-delay="100">
+            Perbarui data peminjaman fasilitas yang sudah kamu ajukan
         </p>
     </div>
 </section>
 
-<div class="container mb-5 edit-peminjaman-wrapper">
+<div class="container mb-5">
     <div class="row justify-content-center">
-        <div class="col-lg-8">
+        <div class="col-lg-8" data-aos="fade-up">
             
             <?php if (!empty($errors)): ?>
                 <div class="alert alert-danger">
+                    <h6 class="mb-2">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        Terjadi Kesalahan:
+                    </h6>
                     <ul class="mb-0">
                         <?php foreach ($errors as $e): ?>
-                            <li><?= htmlspecialchars($e); ?></li>
+                            <li><?= htmlspecialchars($e, ENT_QUOTES, 'UTF-8') ?></li>
                         <?php endforeach; ?>
                     </ul>
                 </div>
             <?php endif; ?>
 
-            <div class="card card-form p-4">
-                <form method="post" enctype="multipart/form-data" novalidate>
-                    <div class="mb-3">
-                        <label class="form-label">Tanggal Mulai</label>
+            <!-- Info Fasilitas -->
+            <div class="info-box">
+                <h6>
+                    <i class="bi bi-building me-2"></i>Fasilitas yang Dipinjam
+                </h6>
+                <p class="mb-0">
+                    <strong><?= $fasilitas_list ?></strong>
+                </p>
+            </div>
+
+            <div class="card card-form">
+                <form method="post" enctype="multipart/form-data" novalidate id="editForm">
+                    <!-- CSRF Token -->
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+
+                    <div class="mb-4">
+                        <label class="form-label">
+                            <i class="bi bi-calendar-event me-1"></i>Tanggal Mulai
+                        </label>
                         <input type="date" 
                                name="tanggal_mulai" 
+                               id="tanggal_mulai"
                                class="form-control" 
-                               value="<?= htmlspecialchars($data['tanggal_mulai']); ?>" 
+                               value="<?= $tanggal_mulai_display ?>" 
                                required>
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Pilih tanggal mulai peminjaman (tidak boleh sebelum hari ini)
+                        </small>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Tanggal Selesai</label>
+                    <div class="mb-4">
+                        <label class="form-label">
+                            <i class="bi bi-calendar-check me-1"></i>Tanggal Selesai
+                        </label>
                         <input type="date" 
                                name="tanggal_selesai" 
+                               id="tanggal_selesai"
                                class="form-control" 
-                               value="<?= htmlspecialchars($data['tanggal_selesai']); ?>" 
+                               value="<?= $tanggal_selesai_display ?>" 
                                required>
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Pilih tanggal selesai peminjaman (maksimal 30 hari dari tanggal mulai)
+                        </small>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Catatan</label>
-                        <textarea name="catatan" class="form-control" rows="3"><?= htmlspecialchars($data['catatan'] ?? ''); ?></textarea>
-                        <small class="text-muted">Tambahkan keterangan kegiatan atau kebutuhan peminjaman (opsional).</small>
+                    <div class="mb-4">
+                        <label class="form-label">
+                            <i class="bi bi-chat-left-text me-1"></i>Catatan
+                        </label>
+                        <textarea 
+                            name="catatan" 
+                            id="catatan"
+                            class="form-control" 
+                            rows="4"
+                            maxlength="500"
+                            placeholder="Tambahkan keterangan kegiatan atau kebutuhan peminjaman (opsional)"><?= $catatan_display ?></textarea>
+                        <small class="text-muted" id="charCount">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Keterangan tambahan tentang peminjaman (maksimal 500 karakter)
+                        </small>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Dokumen Peminjaman (PDF)</label>
-                        <?php if (!empty($data['dokumen_peminjaman'])): ?>
-                            <p class="small text-muted mb-1">
-                                File saat ini: 
-                                <a href="../uploads/dokumen/<?= htmlspecialchars($data['dokumen_peminjaman']); ?>" target="_blank">
-                                    <?= htmlspecialchars($data['dokumen_peminjaman']); ?>
+                    <div class="mb-4">
+                        <label class="form-label">
+                            <i class="bi bi-file-earmark-pdf me-1"></i>Dokumen Peminjaman (PDF)
+                        </label>
+                        
+                        <?php if (!empty($dokumen_display)): ?>
+                            <div class="alert alert-info mb-2">
+                                <i class="bi bi-file-earmark-pdf-fill me-2"></i>
+                                <strong>File saat ini:</strong>
+                                <a href="../uploads/dokumen/<?= $dokumen_display ?>" target="_blank" class="text-decoration-none">
+                                    <?= $dokumen_display ?>
                                 </a>
-                            </p>
+                            </div>
                         <?php endif; ?>
+                        
                         <input type="file" 
                                name="dokumen_peminjaman" 
                                id="dokumen_peminjaman" 
                                class="form-control" 
                                accept="application/pdf">
                         <small class="text-muted">
-                            Kosongkan jika tidak ingin mengganti dokumen. Format diizinkan: <strong>PDF</strong>, maks. 2MB.
+                            <i class="bi bi-info-circle me-1"></i>
+                            Kosongkan jika tidak ingin mengganti dokumen. Format: <strong>PDF</strong>, maksimal <strong>2MB</strong>
                         </small>
                     </div>
 
-                    <div class="d-flex justify-content-between mt-4">
-                        <a href="detail_peminjaman.php?id=<?= (int)$id_pinjam; ?>" class="btn btn-outline-secondary">
-                            <i class="bi bi-arrow-left me-1"></i> Kembali
+                    <hr class="my-4">
+
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <a href="detail_peminjaman.php?id=<?= $id_pinjam ?>" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-2"></i>Kembali
                         </a>
-                        <button type="submit" class="btn btn-primary px-4">
-                            <i class="bi bi-save me-1"></i> Simpan Perubahan
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-2"></i>Simpan Perubahan
                         </button>
                     </div>
                 </form>
@@ -253,49 +598,181 @@ include '../includes/peminjam/navbar.php';   // navbar peminjam (home/fasilitas/
     </div>
 </div>
 
+<?php include '../includes/peminjam/footer.php'; ?>
+
+<script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    const tglMulai   = document.querySelector('input[name="tanggal_mulai"]');
-    const tglSelesai = document.querySelector('input[name="tanggal_selesai"]');
-    const fileInput  = document.getElementById('dokumen_peminjaman');
+    // Initialize AOS
+    AOS.init({ 
+        duration: 900, 
+        once: true,
+        offset: 100
+    });
 
-    const today = new Date().toISOString().split('T')[0];
-    if (tglMulai && !tglMulai.value)   tglMulai.setAttribute('min', today);
-    if (tglSelesai && !tglSelesai.value) tglSelesai.setAttribute('min', today);
+    document.addEventListener('DOMContentLoaded', function() {
+        const tglMulai = document.getElementById('tanggal_mulai');
+        const tglSelesai = document.getElementById('tanggal_selesai');
+        const fileInput = document.getElementById('dokumen_peminjaman');
+        const catatan = document.getElementById('catatan');
+        const charCount = document.getElementById('charCount');
+        const form = document.getElementById('editForm');
 
-    if (tglMulai && tglSelesai) {
-        tglMulai.addEventListener('change', function () {
-            if (tglMulai.value) {
-                tglSelesai.min = tglMulai.value;
-                if (tglSelesai.value && tglSelesai.value < tglMulai.value) {
-                    tglSelesai.value = tglMulai.value;
+        // Set minimum date to today
+        const today = new Date().toISOString().split('T')[0];
+        if (tglMulai) {
+            tglMulai.setAttribute('min', today);
+        }
+        if (tglSelesai) {
+            tglSelesai.setAttribute('min', today);
+        }
+
+        // Update tanggal selesai min ketika tanggal mulai berubah
+        if (tglMulai && tglSelesai) {
+            tglMulai.addEventListener('change', function() {
+                if (tglMulai.value) {
+                    tglSelesai.min = tglMulai.value;
+                    
+                    // Auto-adjust jika tanggal selesai < tanggal mulai
+                    if (tglSelesai.value && tglSelesai.value < tglMulai.value) {
+                        tglSelesai.value = tglMulai.value;
+                    }
+
+                    // Validasi maksimal 30 hari
+                    if (tglSelesai.value) {
+                        const start = new Date(tglMulai.value);
+                        const end = new Date(tglSelesai.value);
+                        const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+                        
+                        if (diffDays > 30) {
+                            alert('⚠️ Durasi peminjaman maksimal 30 hari!');
+                            const maxDate = new Date(start);
+                            maxDate.setDate(maxDate.getDate() + 30);
+                            tglSelesai.value = maxDate.toISOString().split('T')[0];
+                        }
+                    }
+                }
+            });
+
+            tglSelesai.addEventListener('change', function() {
+                if (tglMulai.value && tglSelesai.value) {
+                    const start = new Date(tglMulai.value);
+                    const end = new Date(tglSelesai.value);
+                    const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+                    
+                    if (diffDays > 30) {
+                        alert('⚠️ Durasi peminjaman maksimal 30 hari!');
+                        const maxDate = new Date(start);
+                        maxDate.setDate(maxDate.getDate() + 30);
+                        tglSelesai.value = maxDate.toISOString().split('T')[0];
+                    }
+                }
+            });
+        }
+
+        // Character counter untuk catatan
+        if (catatan && charCount) {
+            function updateCharCount() {
+                const length = catatan.value.length;
+                const baseText = 'Keterangan tambahan tentang peminjaman ';
+                charCount.innerHTML = `<i class="bi bi-info-circle me-1"></i>${baseText}(<strong>${length}/500 karakter</strong>)`;
+                
+                if (length > 450) {
+                    charCount.style.color = '#dc3545';
+                } else if (length > 350) {
+                    charCount.style.color = '#f59e0b';
+                } else {
+                    charCount.style.color = '#6b7280';
                 }
             }
-        });
-    }
+            
+            catatan.addEventListener('input', updateCharCount);
+            updateCharCount();
+        }
 
-    if (fileInput) {
-        fileInput.addEventListener('change', function () {
-            const file = this.files[0];
-            if (!file) return;
+        // Validasi file PDF
+        if (fileInput) {
+            fileInput.addEventListener('change', function() {
+                const file = this.files[0];
+                if (!file) return;
 
-            const name = file.name.toLowerCase();
-            const ext  = name.split('.').pop();
+                const fileName = file.name.toLowerCase();
+                const ext = fileName.split('.').pop();
 
-            if (ext !== 'pdf') {
-                alert('Dokumen peminjaman harus berformat PDF.');
-                this.value = '';
-                return;
-            }
+                // Validasi extension
+                if (ext !== 'pdf') {
+                    alert('⚠️ Dokumen peminjaman harus berformat PDF!');
+                    this.value = '';
+                    return;
+                }
 
-            const maxSize = 2 * 1024 * 1024; // 2MB
-            if (file.size > maxSize) {
-                alert('Ukuran file maksimal 2MB.');
-                this.value = '';
-            }
-        });
-    }
-});
+                // Validasi ukuran (2MB)
+                const maxSize = 2 * 1024 * 1024;
+                if (file.size > maxSize) {
+                    alert('⚠️ Ukuran file maksimal 2MB!');
+                    this.value = '';
+                    return;
+                }
+
+                // Validasi MIME type
+                if (file.type !== 'application/pdf') {
+                    alert('⚠️ File yang dipilih bukan PDF valid!');
+                    this.value = '';
+                    return;
+                }
+            });
+        }
+
+        // Form validation sebelum submit
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                let isValid = true;
+                const errors = [];
+
+                // Validasi tanggal
+                if (!tglMulai.value || !tglSelesai.value) {
+                    errors.push('Tanggal mulai dan selesai harus diisi');
+                    isValid = false;
+                } else {
+                    const start = new Date(tglMulai.value);
+                    const end = new Date(tglSelesai.value);
+                    const todayDate = new Date(today);
+
+                    if (start < todayDate) {
+                        errors.push('Tanggal mulai tidak boleh sebelum hari ini');
+                        isValid = false;
+                    }
+
+                    if (end < start) {
+                        errors.push('Tanggal selesai tidak boleh lebih awal dari tanggal mulai');
+                        isValid = false;
+                    }
+
+                    const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+                    if (diffDays > 30) {
+                        errors.push('Durasi peminjaman maksimal 30 hari');
+                        isValid = false;
+                    }
+                }
+
+                // Validasi catatan
+                if (catatan.value.length > 500) {
+                    errors.push('Catatan maksimal 500 karakter');
+                    isValid = false;
+                }
+
+                if (!isValid) {
+                    e.preventDefault();
+                    alert('⚠️ Validasi Gagal:\n\n' + errors.join('\n'));
+                }
+            });
+        }
+    });
+
+    // Navbar scroll effect
+    window.addEventListener('scroll', function() {
+        const navbar = document.querySelector('.navbar');
+        if (navbar) {
+            navbar.classList.toggle('scrolled', window.scrollY > 50);
+        }
+    });
 </script>
-
-<?php include '../includes/peminjam/footer.php'; ?>

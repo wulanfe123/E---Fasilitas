@@ -37,9 +37,8 @@ if (!in_array($filter_status, ['', 'proses', 'selesai'], true)) {
 
 /* =====================
    NOTIFIKASI UNTUK NAVBAR
+   (tidak pakai input user, tetap query biasa)
    ===================== */
-
-// ========================= NOTIFIKASI SUPER ADMIN / BAGIAN UMUM =========================
 $notifPeminjaman        = [];
 $notifRusak             = [];
 $jumlahNotifPeminjaman  = 0;
@@ -47,7 +46,7 @@ $jumlahNotifRusak       = 0;
 $jumlahNotif            = 0;
 
 // Peminjaman baru (status usulan)
-$qNotifPeminjaman = $conn->query("
+$qNotifPeminjaman = mysqli_query($conn, "
     SELECT 
         p.id_pinjam,
         u.nama,
@@ -59,14 +58,14 @@ $qNotifPeminjaman = $conn->query("
     LIMIT 5
 ");
 if ($qNotifPeminjaman) {
-    while ($row = $qNotifPeminjaman->fetch_assoc()) {
+    while ($row = mysqli_fetch_assoc($qNotifPeminjaman)) {
         $notifPeminjaman[] = $row;
     }
 }
 $jumlahNotifPeminjaman = count($notifPeminjaman);
 
 // Pengembalian dengan kondisi rusak
-$qNotifRusak = $conn->query("
+$qNotifRusak = mysqli_query($conn, "
     SELECT 
         k.id_kembali,
         k.id_pinjam,
@@ -80,7 +79,7 @@ $qNotifRusak = $conn->query("
     LIMIT 5
 ");
 if ($qNotifRusak) {
-    while ($row = $qNotifRusak->fetch_assoc()) {
+    while ($row = mysqli_fetch_assoc($qNotifRusak)) {
         $notifRusak[] = $row;
     }
 }
@@ -89,139 +88,117 @@ $jumlahNotifRusak = count($notifRusak);
 // Total untuk badge di icon bell
 $jumlahNotif = $jumlahNotifPeminjaman + $jumlahNotifRusak;
 
-/* Riwayat 10 notifikasi terbaru */
-$notifList = [];
-$qNotif = $conn->query("
-    SELECT 
-        id_notifikasi,
-        id_pinjam,
-        judul,
-        pesan,
-        tipe,
-        created_at,
-        is_read
-    FROM notifikasi
-    WHERE id_user = $id_user_login
-    ORDER BY created_at DESC
-    LIMIT 10
-");
-if ($qNotif) {
-    while ($row = $qNotif->fetch_assoc()) {
-        $notifList[] = $row;
-    }
-}
-
-/* =======================
-   FUNGSI HELPER NOTIFIKASI
-   ======================= */
-
-function kirimNotifikasiTindakLanjut(mysqli $conn, int $id_kembali, string $tindakan, string $status): void
-{
-    $q = $conn->query("
-        SELECT p.id_pinjam, p.id_user 
-        FROM pengembalian pg
-        JOIN peminjaman p ON pg.id_pinjam = p.id_pinjam
-        WHERE pg.id_kembali = $id_kembali
-        LIMIT 1
-    ");
-
-    if ($q && $row = $q->fetch_assoc()) {
-        $id_pinjam        = (int) $row['id_pinjam'];
-        $id_user_peminjam = (int) $row['id_user'];
-
-        $judul = "Tindak Lanjut Kerusakan Peminjaman #{$id_pinjam}";
-        $pesan = "Petugas telah memproses tindak lanjut kerusakan untuk peminjaman #{$id_pinjam}. "
-               . "Tindakan: {$tindakan}. Status tindak lanjut: {$status}. "
-               . "Silakan buka menu Komunikasi Kerusakan pada detail peminjaman Anda jika ingin berdiskusi.";
-
-        $judulEsc = mysqli_real_escape_string($conn, $judul);
-        $pesanEsc = mysqli_real_escape_string($conn, $pesan);
-
-        $conn->query("
-            INSERT INTO notifikasi (id_user, id_pinjam, judul, pesan, tipe, created_at, is_read)
-            VALUES ($id_user_peminjam, $id_pinjam, '$judulEsc', '$pesanEsc', 'tindaklanjut', NOW(), 0)
-        ");
-    }
-}
+// Variable untuk badge sidebar
+$statUsulan = $jumlahNotifPeminjaman;
 
 /* ==================================
-   UPDATE DATA TINDAK LANJUT KERUSAKAN
-   (TIDAK ADA TAMBAH MANUAL DI SINI)
+   AMBIL DATA TINDAK LANJUT (UNTUK EDIT)
    ================================== */
 $editData = null;
 if (isset($_GET['edit'])) {
     $id_tindaklanjut = (int) $_GET['edit'];
     if ($id_tindaklanjut > 0) {
-        $get = $conn->query("
-            SELECT * FROM tindaklanjut 
-            WHERE id_tindaklanjut = $id_tindaklanjut
-            LIMIT 1
-        ");
-        $editData = $get ? $get->fetch_assoc() : null;
+        $sqlEdit = "SELECT * FROM tindaklanjut WHERE id_tindaklanjut = ? LIMIT 1";
+        if ($stmtEdit = $conn->prepare($sqlEdit)) {
+            $stmtEdit->bind_param("i", $id_tindaklanjut);
+            $stmtEdit->execute();
+            $resultEdit = $stmtEdit->get_result();
+            $editData   = $resultEdit->fetch_assoc() ?: null;
+            $stmtEdit->close();
+        }
     }
 }
 
+/* ==================================
+   UPDATE DATA TINDAK LANJUT KERUSAKAN
+   (FORM INPUT -> PREPARED STATEMENT)
+   ================================== */
 if (isset($_POST['update'])) {
     $id_tindaklanjut = (int) ($_POST['id_tindaklanjut'] ?? 0);
     $tindakan        = trim($_POST['tindakan'] ?? '');
     $deskripsi       = trim($_POST['deskripsi'] ?? '');
     $status          = trim($_POST['status'] ?? '');
 
+    // VALIDASI INPUT
     if ($id_tindaklanjut <= 0) {
         $_SESSION['error'] = "Data tindak lanjut tidak valid.";
     } elseif ($tindakan === '') {
         $_SESSION['error'] = "Tindakan tidak boleh kosong.";
-    } elseif (strlen($tindakan) > 255) {
+    } elseif (mb_strlen($tindakan) > 255) {
         $_SESSION['error'] = "Tindakan terlalu panjang (maksimal 255 karakter).";
-    } elseif (strlen($deskripsi) > 500) {
+    } elseif (mb_strlen($deskripsi) > 500) {
         $_SESSION['error'] = "Deskripsi terlalu panjang (maksimal 500 karakter).";
     } elseif (!in_array($status, ['proses','selesai'], true)) {
         $_SESSION['error'] = "Status tindak lanjut tidak valid.";
     } else {
-        $tindakanEsc  = mysqli_real_escape_string($conn, $tindakan);
-        $deskripsiEsc = mysqli_real_escape_string($conn, $deskripsi);
-        $statusEsc    = mysqli_real_escape_string($conn, $status);
-
-        $conn->query("
+        // UPDATE tindaklanjut pakai prepared statement
+        $sql = "
             UPDATE tindaklanjut 
-            SET tindakan = '$tindakanEsc', 
-                deskripsi = '$deskripsiEsc', 
-                status = '$statusEsc'
-            WHERE id_tindaklanjut = $id_tindaklanjut
-        ");
+            SET tindakan = ?, 
+                deskripsi = ?, 
+                status = ?
+            WHERE id_tindaklanjut = ?
+        ";
 
-        // Ambil id_kembali untuk update pengembalian & notifikasi
-        $qTL = $conn->query("
-            SELECT id_kembali 
-            FROM tindaklanjut 
-            WHERE id_tindaklanjut = $id_tindaklanjut
-            LIMIT 1
-        ");
-        if ($qTL && $rowTL = $qTL->fetch_assoc()) {
-            $id_kembali = (int) $rowTL['id_kembali'];
+        if ($stmtUpd = $conn->prepare($sql)) {
+            $stmtUpd->bind_param("sssi", $tindakan, $deskripsi, $status, $id_tindaklanjut);
+            $execUpd = $stmtUpd->execute();
+            $stmtUpd->close();
 
-            if ($status === 'selesai') {
-                // kondisi pengembalian jadi bagus
-                $conn->query("
-                    UPDATE pengembalian 
-                    SET kondisi = 'bagus'
-                    WHERE id_kembali = $id_kembali
-                ");
+            if ($execUpd) {
+                // Ambil id_kembali untuk update pengembalian
+                $id_kembali = 0;
+                $sqlTL = "
+                    SELECT id_kembali 
+                    FROM tindaklanjut 
+                    WHERE id_tindaklanjut = ?
+                    LIMIT 1
+                ";
+                if ($stmtTL = $conn->prepare($sqlTL)) {
+                    $stmtTL->bind_param("i", $id_tindaklanjut);
+                    $stmtTL->execute();
+                    $resTL = $stmtTL->get_result();
+                    if ($rowTL = $resTL->fetch_assoc()) {
+                        $id_kembali = (int) $rowTL['id_kembali'];
+                    }
+                    $stmtTL->close();
+                }
 
-                // peminjaman dianggap selesai juga
-                $conn->query("
-                    UPDATE peminjaman p
-                    JOIN pengembalian pg ON p.id_pinjam = pg.id_pinjam
-                    SET p.status = 'selesai'
-                    WHERE pg.id_kembali = $id_kembali
-                      AND p.status = 'diterima'
-                ");
+                if ($id_kembali > 0 && $status === 'selesai') {
+                    // 1) kondisi pengembalian jadi bagus
+                    $sqlPeng = "
+                        UPDATE pengembalian 
+                        SET kondisi = 'bagus'
+                        WHERE id_kembali = ?
+                    ";
+                    if ($stmtPeng = $conn->prepare($sqlPeng)) {
+                        $stmtPeng->bind_param("i", $id_kembali);
+                        $stmtPeng->execute();
+                        $stmtPeng->close();
+                    }
+
+                    // 2) peminjaman dianggap selesai juga
+                    $sqlPinjam = "
+                        UPDATE peminjaman p
+                        JOIN pengembalian pg ON p.id_pinjam = pg.id_pinjam
+                        SET p.status = 'selesai'
+                        WHERE pg.id_kembali = ?
+                          AND p.status = 'diterima'
+                    ";
+                    if ($stmtPinjam = $conn->prepare($sqlPinjam)) {
+                        $stmtPinjam->bind_param("i", $id_kembali);
+                        $stmtPinjam->execute();
+                        $stmtPinjam->close();
+                    }
+                }
+
+                $_SESSION['success'] = "Data tindak lanjut berhasil diperbarui.";
+            } else {
+                $_SESSION['error'] = "Gagal memperbarui tindak lanjut.";
             }
-
-            kirimNotifikasiTindakLanjut($conn, $id_kembali, $tindakan, $status);
+        } else {
+            $_SESSION['error'] = "Gagal menyiapkan query update tindak lanjut.";
         }
-
-        $_SESSION['success'] = "Data tindak lanjut berhasil diperbarui.";
     }
 
     header("Location: tindaklanjut.php");
@@ -229,34 +206,22 @@ if (isset($_POST['update'])) {
 }
 
 /* ==================================
-   BUILD WHERE UNTUK FILTER
-   ================================== */
-$whereTL = "1=1";
-
-if ($filter_q !== '') {
-    $qEsc = mysqli_real_escape_string($conn, $filter_q);
-    $like = "'%$qEsc%'";
-    $whereTL .= "
-        AND (
-            tl.id_tindaklanjut LIKE $like
-            OR tl.id_kembali LIKE $like
-            OR tl.tindakan LIKE $like
-            OR tl.deskripsi LIKE $like
-            OR pg.id_pinjam LIKE $like
-            OR u.nama LIKE $like
-        )
-    ";
-}
-
-if ($filter_status !== '') {
-    $statusEsc = mysqli_real_escape_string($conn, $filter_status);
-    $whereTL  .= " AND tl.status = '$statusEsc'";
-}
-
-/* ==================================
    AMBIL DATA UNTUK TAMPILAN
+   (FILTER -> PREPARED STATEMENT)
    ================================== */
-$sqlDataTindak = "
+
+/*
+   Kita buat 4 kondisi:
+   1) Tanpa filter
+   2) Hanya q
+   3) Hanya status
+   4) q + status
+*/
+
+/* --------- DATA TINDAK LANJUT (TAB 1) --------- */
+$dataTindak = null;
+
+$baseSelectTL = "
     SELECT 
         tl.*,
         pg.id_pinjam,
@@ -265,13 +230,69 @@ $sqlDataTindak = "
     LEFT JOIN pengembalian pg ON tl.id_kembali = pg.id_kembali
     LEFT JOIN peminjaman p    ON pg.id_pinjam = p.id_pinjam
     LEFT JOIN users u         ON p.id_user = u.id_user
-    WHERE $whereTL
-    ORDER BY tl.id_tindaklanjut DESC
 ";
-$dataTindak = $conn->query($sqlDataTindak);
 
-/* Rekap: gabungkan tindaklanjut + peminjaman + total chat dari komunikasi_kerusakan */
-$sqlRekap = "
+if ($filter_q === '' && $filter_status === '') {
+    // tanpa filter
+    $sqlDataTindak = $baseSelectTL . "
+        WHERE 1=1
+        ORDER BY tl.id_tindaklanjut DESC
+    ";
+    $stmtTL = $conn->prepare($sqlDataTindak);
+} elseif ($filter_q !== '' && $filter_status === '') {
+    // hanya q
+    $sqlDataTindak = $baseSelectTL . "
+        WHERE 
+            (
+                tl.id_tindaklanjut LIKE ?
+                OR tl.id_kembali LIKE ?
+                OR tl.tindakan LIKE ?
+                OR tl.deskripsi LIKE ?
+                OR pg.id_pinjam LIKE ?
+                OR u.nama LIKE ?
+            )
+        ORDER BY tl.id_tindaklanjut DESC
+    ";
+    $stmtTL = $conn->prepare($sqlDataTindak);
+    $like = '%' . $filter_q . '%';
+    $stmtTL->bind_param("ssssss", $like, $like, $like, $like, $like, $like);
+} elseif ($filter_q === '' && $filter_status !== '') {
+    // hanya status
+    $sqlDataTindak = $baseSelectTL . "
+        WHERE tl.status = ?
+        ORDER BY tl.id_tindaklanjut DESC
+    ";
+    $stmtTL = $conn->prepare($sqlDataTindak);
+    $stmtTL->bind_param("s", $filter_status);
+} else {
+    // q + status
+    $sqlDataTindak = $baseSelectTL . "
+        WHERE 
+            (
+                tl.id_tindaklanjut LIKE ?
+                OR tl.id_kembali LIKE ?
+                OR tl.tindakan LIKE ?
+                OR tl.deskripsi LIKE ?
+                OR pg.id_pinjam LIKE ?
+                OR u.nama LIKE ?
+            )
+            AND tl.status = ?
+        ORDER BY tl.id_tindaklanjut DESC
+    ";
+    $stmtTL = $conn->prepare($sqlDataTindak);
+    $like = '%' . $filter_q . '%';
+    $stmtTL->bind_param("sssssss", $like, $like, $like, $like, $like, $like, $filter_status);
+}
+
+if ($stmtTL) {
+    $stmtTL->execute();
+    $dataTindak = $stmtTL->get_result();
+}
+
+/* --------- REKAP TINDAK LANJUT (TAB 2) --------- */
+$dataRekap = null;
+
+$baseSelectRekap = "
     SELECT 
         tl.id_tindaklanjut,
         tl.tanggal,
@@ -286,23 +307,84 @@ $sqlRekap = "
     JOIN users u         ON p.id_user = u.id_user
     LEFT JOIN komunikasi_kerusakan ck
         ON ck.id_tindaklanjut = tl.id_tindaklanjut
-    WHERE $whereTL
-    GROUP BY tl.id_tindaklanjut
-    ORDER BY tl.tanggal DESC
 ";
-$dataRekap = $conn->query($sqlRekap);
+
+if ($filter_q === '' && $filter_status === '') {
+    $sqlRekap = $baseSelectRekap . "
+        WHERE 1=1
+        GROUP BY tl.id_tindaklanjut
+        ORDER BY tl.tanggal DESC
+    ";
+    $stmtRekap = $conn->prepare($sqlRekap);
+} elseif ($filter_q !== '' && $filter_status === '') {
+    $sqlRekap = $baseSelectRekap . "
+        WHERE 
+            (
+                tl.id_tindaklanjut LIKE ?
+                OR tl.id_kembali LIKE ?
+                OR tl.tindakan LIKE ?
+                OR tl.deskripsi LIKE ?
+                OR pg.id_pinjam LIKE ?
+                OR u.nama LIKE ?
+            )
+        GROUP BY tl.id_tindaklanjut
+        ORDER BY tl.tanggal DESC
+    ";
+    $stmtRekap = $conn->prepare($sqlRekap);
+    $like = '%' . $filter_q . '%';
+    $stmtRekap->bind_param("ssssss", $like, $like, $like, $like, $like, $like);
+} elseif ($filter_q === '' && $filter_status !== '') {
+    $sqlRekap = $baseSelectRekap . "
+        WHERE tl.status = ?
+        GROUP BY tl.id_tindaklanjut
+        ORDER BY tl.tanggal DESC
+    ";
+    $stmtRekap = $conn->prepare($sqlRekap);
+    $stmtRekap->bind_param("s", $filter_status);
+} else {
+    $sqlRekap = $baseSelectRekap . "
+        WHERE 
+            (
+                tl.id_tindaklanjut LIKE ?
+                OR tl.id_kembali LIKE ?
+                OR tl.tindakan LIKE ?
+                OR tl.deskripsi LIKE ?
+                OR pg.id_pinjam LIKE ?
+                OR u.nama LIKE ?
+            )
+            AND tl.status = ?
+        GROUP BY tl.id_tindaklanjut
+        ORDER BY tl.tanggal DESC
+    ";
+    $stmtRekap = $conn->prepare($sqlRekap);
+    $like = '%' . $filter_q . '%';
+    $stmtRekap->bind_param("sssssss", $like, $like, $like, $like, $like, $like, $filter_status);
+}
+
+if ($stmtRekap) {
+    $stmtRekap->execute();
+    $dataRekap = $stmtRekap->get_result();
+}
 
 /* ==================================
    TEMPLATE ADMIN
    ================================== */
+$pageTitle   = 'Tindak Lanjut Kerusakan';
+$currentPage = 'tindaklanjut';
+
 include '../includes/admin/header.php';
-include '../includes/admin/navbar.php';
 include '../includes/admin/sidebar.php';
 ?>
 
 <style>
+    .tindaklanjut-title {
+        font-size: 1.4rem;
+    }
+    .tindaklanjut-subtitle {
+        font-size: 0.9rem;
+    }
     .tab-card {
-        border-radius: 14px;
+        border-radius: 12px;
         box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
         border: 1px solid #e5e7eb;
     }
@@ -311,11 +393,12 @@ include '../includes/admin/sidebar.php';
         gap: .5rem;
     }
     .nav-tabs .nav-link {
-        font-weight: 500;
+        font-weight: 600;
         color: #6b7280;
-        border-radius: 999px;
+        border-radius: 10px;
         border: 1px solid transparent;
-        padding: 0.5rem 1.1rem;
+        padding: 0.6rem 1.3rem;
+        transition: all 0.3s ease;
     }
     .nav-tabs .nav-link:hover {
         color: #dc3545;
@@ -331,279 +414,401 @@ include '../includes/admin/sidebar.php';
         border-left: 4px solid #dc3545;
         padding-left: .6rem;
     }
+    .badge-status {
+        font-size: 0.8rem;
+        padding: .4rem .7rem;
+        font-weight: 600;
+    }
+    .btn-action {
+        padding: 0.35rem 0.7rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+    }
+    .filter-section {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+    }
 </style>
 
-<div class="container-fluid px-4 mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="fw-bold text-danger mb-1">Tindak Lanjut Kerusakan</h2>
-            <p class="text-muted mb-0">
-                Kelola tindak lanjut kerusakan fasilitas dan pantau rekap komunikasi peminjam dengan admin.
-            </p>
-        </div>
-        <div></div>
-    </div>
+<!-- Main Content Area -->
+<div id="layoutSidenav_content">
+    
+    <?php include '../includes/admin/navbar.php'; ?>
 
-    <?php if (!empty($success)): ?>
-        <div class="alert alert-success alert-dismissible fade show">
-            <?= htmlspecialchars($success); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-    <?php if (!empty($error)): ?>
-        <div class="alert alert-danger alert-dismissible fade show">
-            <?= htmlspecialchars($error); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
+    <main>
+        <div class="container-fluid px-4">
 
-    <!-- NAV TABS -->
-    <ul class="nav nav-tabs mb-3" id="tlTab" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="tab-tl-tab" data-bs-toggle="tab" data-bs-target="#tab-tl"
-                    type="button" role="tab" aria-controls="tab-tl" aria-selected="true">
-                <i class="bi bi-tools me-1"></i> Tindak Lanjut
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-rekap-tab" data-bs-toggle="tab" data-bs-target="#tab-rekap"
-                    type="button" role="tab" aria-controls="tab-rekap" aria-selected="false">
-                <i class="bi bi-clipboard-data me-1"></i> Rekap
-            </button>
-        </li>
-    </ul>
-
-    <div class="tab-content" id="tlTabContent">
-        <!-- TAB 1: TINDAK LANJUT -->
-        <div class="tab-pane fade show active" id="tab-tl" role="tabpanel" aria-labelledby="tab-tl-tab">
-
-            <?php if ($editData): ?>
-            <!-- HANYA MUNCUL JIKA SEDANG EDIT -->
-            <div class="card tab-card p-4 mb-4">
-                <h5 class="fw-semibold mb-3">
-                    Edit Tindak Lanjut
-                </h5>
-                <form method="post">
-                    <input type="hidden" name="id_tindaklanjut" value="<?= (int) $editData['id_tindaklanjut']; ?>">
-
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">ID Kembali</label>
-                            <input type="text" class="form-control" 
-                                   value="ID Kembali #<?= (int)$editData['id_kembali']; ?>" readonly>
-                        </div>
-
-                        <div class="col-md-4">
-                            <label class="form-label fw-semibold">Tindakan</label>
-                            <input type="text" name="tindakan" class="form-control"
-                                   value="<?= htmlspecialchars($editData['tindakan']); ?>"
-                                   maxlength="255"
-                                   required>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">Status</label>
-                            <select name="status" class="form-select">
-                                <option value="proses"  <?= ($editData['status'] === 'proses') ? 'selected' : ''; ?>>
-                                    Proses
-                                </option>
-                                <option value="selesai" <?= ($editData['status'] === 'selesai') ? 'selected' : ''; ?>>
-                                    Selesai
-                                </option>
-                            </select>
-                        </div>
-
-                        <div class="col-md-2 d-flex align-items-end">
-                            <button type="submit" name="update" class="btn btn-primary w-100">
-                                <i class="bi bi-save me-1"></i> Perbarui
-                            </button>
-                        </div>
-
-                        <div class="col-12">
-                            <label class="form-label fw-semibold">Keterangan / Deskripsi</label>
-                            <textarea name="deskripsi" class="form-control" rows="2" maxlength="500"><?= htmlspecialchars($editData['deskripsi'] ?? ''); ?></textarea>
-                        </div>
-                    </div>
-                </form>
+            <!-- Header Halaman -->
+            <div class="d-flex justify-content-between align-items-center mb-4 mt-3">
+                <div>
+                    <h2 class="fw-bold text-danger mb-1 tindaklanjut-title">
+                        <i class="fas fa-tools me-2"></i>
+                        Tindak Lanjut Kerusakan
+                    </h2>
+                    <p class="text-muted mb-0 tindaklanjut-subtitle">
+                        Kelola tindak lanjut kerusakan fasilitas dan pantau rekap komunikasi peminjam dengan admin.
+                    </p>
+                </div>
             </div>
+
+            <hr class="mt-0 mb-4" style="border-top: 2px solid #0f172a; opacity: .25;">
+
+            <!-- Alert -->
+            <?php if (!empty($success)): ?>
+                <div class="alert alert-success alert-dismissible fade show">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <?= htmlspecialchars($success); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
             <?php endif; ?>
 
-            <div class="card tab-card mb-4">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h5 class="fw-semibold mb-0">Data Tindak Lanjut</h5>
-                    </div>
-
-                    <!-- FILTER / PENCARIAN -->
-                    <form method="get" action="tindaklanjut.php" class="row g-2 align-items-end mb-3">
-                        <div class="col-md-5">
-                            <label class="form-label">Cari</label>
-                            <input type="text" name="q" class="form-control"
-                                   placeholder="ID Pinjam / Nama Peminjam / Tindakan / Deskripsi"
-                                   value="<?= htmlspecialchars($filter_q); ?>">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Status</label>
-                            <select name="status" class="form-select">
-                                <option value="">Semua Status</option>
-                                <option value="proses"  <?= $filter_status==='proses'?'selected':''; ?>>Proses</option>
-                                <option value="selesai" <?= $filter_status==='selesai'?'selected':''; ?>>Selesai</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4 d-flex gap-2">
-                            <button type="submit" class="btn btn-danger mt-auto">
-                                <i class="bi bi-search me-1"></i> Filter
-                            </button>
-                            <a href="tindaklanjut.php" class="btn btn-outline-secondary mt-auto">
-                                Reset
-                            </a>
-                        </div>
-                    </form>
-
-                    <table class="table table-bordered table-hover align-middle">
-                        <thead class="table-light text-center">
-                            <tr>
-                                <th>No</th>
-                                <th>ID Kembali</th>
-                                <th>ID Pinjam</th>
-                                <th>Peminjam</th>
-                                <th>Tindakan</th>
-                                <th>Deskripsi</th>
-                                <th>Status</th>
-                                <th>Tanggal</th>
-                                <th>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        <?php
-                        $no = 1;
-                        if ($dataTindak && $dataTindak->num_rows > 0):
-                            while ($row = $dataTindak->fetch_assoc()):
-                                $badge = ($row['status'] === 'proses') ? 'warning text-dark' : 'success';
-                        ?>
-                            <tr>
-                                <td class="text-center"><?= $no++; ?></td>
-                                <td class="text-center"><?= (int) $row['id_kembali']; ?></td>
-                                <td class="text-center"><?= htmlspecialchars($row['id_pinjam'] ?? '-'); ?></td>
-                                <td><?= htmlspecialchars($row['nama_peminjam'] ?? '-'); ?></td>
-                                <td><?= htmlspecialchars($row['tindakan']); ?></td>
-                                <td><?= nl2br(htmlspecialchars($row['deskripsi'])); ?></td>
-                                <td class="text-center">
-                                    <span class="badge bg-<?= $badge; ?>">
-                                        <?= htmlspecialchars($row['status']); ?>
-                                    </span>
-                                </td>
-                                <td><?= htmlspecialchars($row['tanggal']); ?></td>
-                                <td class="text-center">
-                                    <a href="tindaklanjut.php?edit=<?= $row['id_tindaklanjut']; ?>" 
-                                       class="btn btn-sm btn-outline-primary mb-1">
-                                        <i class="fas fa-edit"></i>
-                                    </a>
-                                    <?php if (!empty($row['id_pinjam'])): ?>
-                                        <a href="komunikasi_tindaklanjut.php?id_pinjam=<?= (int)$row['id_pinjam']; ?>&id_tl=<?= (int)$row['id_tindaklanjut']; ?>"
-                                           class="btn btn-sm btn-outline-danger mt-1">
-                                            <i class="bi bi-chat-dots me-1"></i> Chat
-                                        </a>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php
-                            endwhile;
-                        else:
-                        ?>
-                            <tr>
-                                <td colspan="9" class="text-center text-muted py-3">
-                                    Belum ada tindak lanjut (atau tidak ada yang cocok dengan filter).
-                                </td>
-                            </tr>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
+            <?php if (!empty($error)): ?>
+                <div class="alert alert-danger alert-dismissible fade show">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <?= htmlspecialchars($error); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
-            </div>
-        </div>
+            <?php endif; ?>
 
-        <!-- TAB 2: REKAP & LAPORAN -->
-        <div class="tab-pane fade" id="tab-rekap" role="tabpanel" aria-labelledby="tab-rekap-tab">
-            <div class="card tab-card mb-5">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h5 class="fw-semibold mb-0">Rekap Tindak Lanjut & Komunikasi</h5>
-                    </div>
-                    <p class="text-muted" style="font-size: 0.9rem;">
-                        Rekap ini menggabungkan data peminjaman, tindak lanjut kerusakan, dan jumlah chat komunikasi kerusakan
-                        antara peminjam dengan admin. Filter yang digunakan sama dengan tab Tindak Lanjut.
-                    </p>
+            <!-- NAV TABS -->
+            <ul class="nav nav-tabs mb-3" id="tlTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-tl-tab" data-bs-toggle="tab" data-bs-target="#tab-tl"
+                            type="button" role="tab" aria-controls="tab-tl" aria-selected="true">
+                        <i class="fas fa-tools me-2"></i> Tindak Lanjut
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-rekap-tab" data-bs-toggle="tab" data-bs-target="#tab-rekap"
+                            type="button" role="tab" aria-controls="tab-rekap" aria-selected="false">
+                        <i class="fas fa-chart-bar me-2"></i> Rekap & Laporan
+                    </button>
+                </li>
+            </ul>
 
-                    <!-- Opsional: tampilkan ringkasan filter aktif -->
-                    <?php if ($filter_q !== '' || $filter_status !== ''): ?>
-                        <div class="alert alert-light border mb-3 py-2" style="font-size:.85rem;">
-                            <strong>Filter aktif:</strong>
-                            <?php if ($filter_q !== ''): ?>
-                                Pencarian: "<em><?= htmlspecialchars($filter_q); ?></em>"
-                            <?php endif; ?>
-                            <?php if ($filter_status !== ''): ?>
-                                <?= $filter_q !== '' ? ' · ' : ''; ?>
-                                Status: <span class="badge bg-secondary"><?= htmlspecialchars($filter_status); ?></span>
-                            <?php endif; ?>
+            <div class="tab-content" id="tlTabContent">
+                <!-- TAB 1: TINDAK LANJUT -->
+                <div class="tab-pane fade show active" id="tab-tl" role="tabpanel" aria-labelledby="tab-tl-tab">
+
+                    <?php if ($editData): ?>
+                    <!-- FORM EDIT -->
+                    <div class="card tab-card mb-4">
+                        <div class="card-body">
+                            <h5 class="fw-semibold mb-3">
+                                <i class="fas fa-edit me-2"></i>
+                                Edit Tindak Lanjut
+                            </h5>
+                            <form method="post">
+                                <input type="hidden" name="id_tindaklanjut" value="<?= (int) $editData['id_tindaklanjut']; ?>">
+
+                                <div class="row g-3">
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">
+                                            <i class="fas fa-hashtag me-1"></i> ID Kembali
+                                        </label>
+                                        <input type="text" class="form-control" 
+                                               value="ID Kembali #<?= (int)$editData['id_kembali']; ?>" readonly>
+                                    </div>
+
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-semibold">
+                                            <i class="fas fa-wrench me-1"></i> Tindakan <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="text" name="tindakan" class="form-control"
+                                               value="<?= htmlspecialchars($editData['tindakan']); ?>"
+                                               maxlength="255"
+                                               required>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold">
+                                            <i class="fas fa-flag me-1"></i> Status <span class="text-danger">*</span>
+                                        </label>
+                                        <select name="status" class="form-select" required>
+                                            <option value="proses"  <?= ($editData['status'] === 'proses') ? 'selected' : ''; ?>>
+                                                ⏳ Proses
+                                            </option>
+                                            <option value="selesai" <?= ($editData['status'] === 'selesai') ? 'selected' : ''; ?>>
+                                                ✅ Selesai
+                                            </option>
+                                        </select>
+                                    </div>
+
+                                    <div class="col-md-2 d-flex align-items-end">
+                                        <button type="submit" name="update" class="btn btn-primary w-100">
+                                            <i class="fas fa-save me-1"></i> Perbarui
+                                        </button>
+                                    </div>
+
+                                    <div class="col-12">
+                                        <label class="form-label fw-semibold">
+                                            <i class="fas fa-comment-alt me-1"></i> Keterangan / Deskripsi
+                                        </label>
+                                        <textarea name="deskripsi" 
+                                                  class="form-control" 
+                                                  rows="3" 
+                                                  maxlength="500"
+                                                  placeholder="Deskripsi detail tindakan perbaikan..."><?= htmlspecialchars($editData['deskripsi'] ?? ''); ?></textarea>
+                                        <small class="text-muted">Maksimal 500 karakter</small>
+                                    </div>
+                                </div>
+
+                                <div class="mt-3">
+                                    <a href="tindaklanjut.php" class="btn btn-outline-secondary">
+                                        <i class="fas fa-times me-1"></i> Batal Edit
+                                    </a>
+                                </div>
+                            </form>
                         </div>
+                    </div>
                     <?php endif; ?>
 
-                    <table class="table table-striped table-hover align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>No</th>
-                                <th>ID TL</th>
-                                <th>ID Pinjam</th>
-                                <th>Peminjam</th>
-                                <th>Tindakan</th>
-                                <th>Status TL</th>
-                                <th>Jumlah Chat</th>
-                                <th>Tanggal TL</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        <?php
-                        $no = 1;
-                        if ($dataRekap && $dataRekap->num_rows > 0):
-                            while ($r = $dataRekap->fetch_assoc()):
-                                $badgeClass = 'secondary';
-                                if ($r['status'] === 'proses')  $badgeClass = 'warning text-dark';
-                                elseif ($r['status'] === 'selesai') $badgeClass = 'success';
-                        ?>
-                            <tr>
-                                <td><?= $no++; ?></td>
-                                <td><?= $r['id_tindaklanjut']; ?></td>
-                                <td><?= $r['id_pinjam']; ?></td>
-                                <td><?= htmlspecialchars($r['nama_peminjam']); ?></td>
-                                <td><?= htmlspecialchars($r['tindakan']); ?></td>
-                                <td>
-                                    <span class="badge bg-<?= $badgeClass; ?>">
-                                        <?= htmlspecialchars($r['status']); ?>
-                                    </span>
-                                </td>
-                                <td><?= (int) $r['total_chat']; ?></td>
-                                <td><?= date('d M Y H:i', strtotime($r['tanggal'])); ?></td>
-                            </tr>
-                        <?php
-                            endwhile;
-                        else:
-                        ?>
-                            <tr>
-                                <td colspan="8" class="text-center text-muted py-3">
-                                    Belum ada data rekap (atau tidak ada yang cocok dengan filter).
-                                </td>
-                            </tr>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
+                    <div class="card tab-card mb-4">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="fw-semibold mb-0">
+                                    <i class="fas fa-list me-2"></i>
+                                    Data Tindak Lanjut
+                                </h5>
+                            </div>
+
+                            <!-- FILTER / PENCARIAN -->
+                            <div class="filter-section">
+                                <form method="get" action="tindaklanjut.php" class="row g-2 align-items-end">
+                                    <div class="col-md-5">
+                                        <label class="form-label fw-semibold small">
+                                            <i class="fas fa-search me-1"></i> Pencarian
+                                        </label>
+                                        <input type="text" name="q" class="form-control"
+                                               placeholder="ID Pinjam / Nama Peminjam / Tindakan / Deskripsi"
+                                               value="<?= htmlspecialchars($filter_q); ?>">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-semibold small">
+                                            <i class="fas fa-filter me-1"></i> Status
+                                        </label>
+                                        <select name="status" class="form-select">
+                                            <option value="">Semua Status</option>
+                                            <option value="proses"  <?= $filter_status==='proses'?'selected':''; ?>>Proses</option>
+                                            <option value="selesai" <?= $filter_status==='selesai'?'selected':''; ?>>Selesai</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4 d-flex gap-2">
+                                        <button type="submit" class="btn btn-danger">
+                                            <i class="fas fa-search me-1"></i> Filter
+                                        </button>
+                                        <a href="tindaklanjut.php" class="btn btn-outline-secondary">
+                                            <i class="fas fa-redo me-1"></i> Reset
+                                        </a>
+                                    </div>
+                                </form>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-hover align-middle mb-0">
+                                    <thead class="table-light text-center">
+                                        <tr>
+                                            <th style="width: 50px;">No</th>
+                                            <th style="width: 90px;">ID Kembali</th>
+                                            <th style="width: 90px;">ID Pinjam</th>
+                                            <th>Peminjam</th>
+                                            <th>Tindakan</th>
+                                            <th>Deskripsi</th>
+                                            <th style="width: 100px;">Status</th>
+                                            <th style="width: 120px;">Tanggal</th>
+                                            <th style="width: 150px;">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    <?php
+                                    $no = 1;
+                                    if ($dataTindak && $dataTindak->num_rows > 0):
+                                        while ($row = $dataTindak->fetch_assoc()):
+                                            $badge = ($row['status'] === 'proses') ? 'warning' : 'success';
+                                    ?>
+                                        <tr>
+                                            <td class="text-center"><?= $no++; ?></td>
+                                            <td class="text-center">
+                                                <span class="badge bg-secondary">#<?= (int) $row['id_kembali']; ?></span>
+                                            </td>
+                                            <td class="text-center">
+                                                <span class="badge bg-info">#<?= htmlspecialchars($row['id_pinjam'] ?? '-'); ?></span>
+                                            </td>
+                                            <td><strong><?= htmlspecialchars($row['nama_peminjam'] ?? '-'); ?></strong></td>
+                                            <td><?= htmlspecialchars($row['tindakan']); ?></td>
+                                            <td><?= nl2br(htmlspecialchars($row['deskripsi'])); ?></td>
+                                            <td class="text-center">
+                                                <span class="badge bg-<?= $badge; ?> badge-status">
+                                                    <?= ucfirst(htmlspecialchars($row['status'])); ?>
+                                                </span>
+                                            </td>
+                                            <td class="text-center">
+                                                <?= $row['tanggal'] ? date('d-m-Y', strtotime($row['tanggal'])) : '-'; ?>
+                                            </td>
+                                            <td class="text-center">
+                                                <a href="tindaklanjut.php?edit=<?= $row['id_tindaklanjut']; ?>" 
+                                                   class="btn btn-sm btn-outline-primary btn-action mb-1"
+                                                   title="Edit Tindak Lanjut">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                                <?php if (!empty($row['id_pinjam'])): ?>
+                                                    <a href="komunikasi_tindaklanjut.php?id_pinjam=<?= (int)$row['id_pinjam']; ?>&id_tl=<?= (int)$row['id_tindaklanjut']; ?>"
+                                                       class="btn btn-sm btn-outline-danger btn-action mb-1"
+                                                       title="Chat Komunikasi">
+                                                        <i class="fas fa-comments"></i>
+                                                    </a>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php
+                                        endwhile;
+                                    else:
+                                    ?>
+                                        <tr>
+                                            <td colspan="9" class="text-center text-muted py-4">
+                                                <i class="fas fa-inbox fa-3x mb-3 d-block opacity-25"></i>
+                                                Belum ada tindak lanjut (atau tidak ada yang cocok dengan filter).
+                                            </td>
+                                        </tr>
+                                    <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                <!-- TAB 2: REKAP & LAPORAN -->
+                <div class="tab-pane fade" id="tab-rekap" role="tabpanel" aria-labelledby="tab-rekap-tab">
+                    <div class="card tab-card mb-5">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="fw-semibold mb-0">
+                                    <i class="fas fa-chart-bar me-2"></i>
+                                    Rekap Tindak Lanjut & Komunikasi
+                                </h5>
+                            </div>
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                <strong>Info:</strong> Rekap ini menggabungkan data peminjaman, tindak lanjut kerusakan, 
+                                dan jumlah chat komunikasi kerusakan antara peminjam dengan admin. 
+                                Filter yang digunakan sama dengan tab Tindak Lanjut.
+                            </div>
+
+                            <!-- Opsional: tampilkan ringkasan filter aktif -->
+                            <?php if ($filter_q !== '' || $filter_status !== ''): ?>
+                                <div class="alert alert-light border mb-3">
+                                    <strong><i class="fas fa-filter me-2"></i>Filter aktif:</strong>
+                                    <?php if ($filter_q !== ''): ?>
+                                        Pencarian: "<em><?= htmlspecialchars($filter_q); ?></em>"
+                                    <?php endif; ?>
+                                    <?php if ($filter_status !== ''): ?>
+                                        <?= $filter_q !== '' ? ' · ' : ''; ?>
+                                        Status: <span class="badge bg-secondary"><?= htmlspecialchars($filter_status); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width: 50px;">No</th>
+                                            <th style="width: 80px;">ID TL</th>
+                                            <th style="width: 90px;">ID Pinjam</th>
+                                            <th>Peminjam</th>
+                                            <th>Tindakan</th>
+                                            <th style="width: 100px;">Status TL</th>
+                                            <th style="width: 100px;">Jumlah Chat</th>
+                                            <th style="width: 150px;">Tanggal TL</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                    <?php
+                                    $no = 1;
+                                    if ($dataRekap && $dataRekap->num_rows > 0):
+                                        while ($r = $dataRekap->fetch_assoc()):
+                                            $badgeClass = 'secondary';
+                                            if ($r['status'] === 'proses')      $badgeClass = 'warning';
+                                            elseif ($r['status'] === 'selesai') $badgeClass = 'success';
+                                    ?>
+                                        <tr>
+                                            <td class="text-center"><?= $no++; ?></td>
+                                            <td class="text-center">
+                                                <span class="badge bg-secondary">#<?= $r['id_tindaklanjut']; ?></span>
+                                            </td>
+                                            <td class="text-center">
+                                                <span class="badge bg-info">#<?= $r['id_pinjam']; ?></span>
+                                            </td>
+                                            <td><strong><?= htmlspecialchars($r['nama_peminjam']); ?></strong></td>
+                                            <td><?= htmlspecialchars($r['tindakan']); ?></td>
+                                            <td class="text-center">
+                                                <span class="badge bg-<?= $badgeClass; ?> badge-status">
+                                                    <?= ucfirst(htmlspecialchars($r['status'])); ?>
+                                                </span>
+                                            </td>
+                                            <td class="text-center">
+                                                <span class="badge bg-primary">
+                                                    <i class="fas fa-comments me-1"></i>
+                                                    <?= (int) $r['total_chat']; ?>
+                                                </span>
+                                            </td>
+                                            <td class="text-center">
+                                                <?= $r['tanggal'] ? date('d M Y H:i', strtotime($r['tanggal'])) : '-'; ?>
+                                            </td>
+                                        </tr>
+                                    <?php
+                                        endwhile;
+                                    else:
+                                    ?>
+                                        <tr>
+                                            <td colspan="8" class="text-center text-muted py-4">
+                                                <i class="fas fa-inbox fa-3x mb-3 d-block opacity-25"></i>
+                                                Belum ada data rekap (atau tidak ada yang cocok dengan filter).
+                                            </td>
+                                        </tr>
+                                    <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer-admin">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+            </div>
+            <div>
+                Version 1.0
             </div>
         </div>
+    </footer>
 
-    </div>
 </div>
 
-<br><br><br>
-
 <?php include '../includes/admin/footer.php'; ?>
+
+<script>
+// Bootstrap Tab functionality
+document.addEventListener('DOMContentLoaded', function () {
+    var triggerTabList = [].slice.call(document.querySelectorAll('#tlTab button'))
+    triggerTabList.forEach(function (triggerEl) {
+        var tabTrigger = new bootstrap.Tab(triggerEl)
+        
+        triggerEl.addEventListener('click', function (event) {
+            event.preventDefault()
+            tabTrigger.show()
+        })
+    })
+});
+</script>

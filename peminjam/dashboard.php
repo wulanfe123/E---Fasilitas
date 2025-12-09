@@ -1,17 +1,27 @@
 <?php
 session_start();
-if (!isset($_SESSION['id_user'])) {
+include '../config/koneksi.php';
+include '../config/helpers.php';
+// Cek login dengan validasi ketat
+if (!isset($_SESSION['id_user']) || $_SESSION['role'] !== 'peminjam') {
     header("Location: ../auth/login.php");
     exit;
 }
+// Validasi dan sanitasi input dari session
+$id_user = filter_var($_SESSION['id_user'], FILTER_VALIDATE_INT);
+if ($id_user === false || $id_user <= 0) {
+    session_destroy();
+    header("Location: ../auth/login.php");
+    exit;
+}
+$nama_user = htmlspecialchars($_SESSION['nama'] ?? 'Peminjam', ENT_QUOTES, 'UTF-8');
 
-include '../config/koneksi.php';
-
-$id_user   = (int) $_SESSION['id_user'];
-$nama_user = $_SESSION['nama_user'] ?? 'Peminjam';
+// Set page variables
+$pageTitle = 'Dashboard Peminjam';
+$currentPage = 'dashboard';
 
 /* =========================================================
-   1) AMBIL RIWAYAT NOTIFIKASI (10 terbaru)
+   1) AMBIL RIWAYAT NOTIFIKASI (10 terbaru) - PREPARED STATEMENT
    ========================================================= */
 $notifikasiList = [];
 $stmt = $conn->prepare("
@@ -21,11 +31,24 @@ $stmt = $conn->prepare("
     ORDER BY created_at DESC
     LIMIT 10
 ");
-$stmt->bind_param("i", $id_user);
-$stmt->execute();
-$res = $stmt->get_result();
-while ($row = $res->fetch_assoc()) {
-    $notifikasiList[] = $row;
+
+if ($stmt) {
+    $stmt->bind_param("i", $id_user);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    while ($row = $result->fetch_assoc()) {
+        $notifikasiList[] = [
+            'id_notifikasi' => (int)$row['id_notifikasi'],
+            'id_pinjam' => (int)$row['id_pinjam'],
+            'judul' => htmlspecialchars($row['judul'], ENT_QUOTES, 'UTF-8'),
+            'pesan' => htmlspecialchars($row['pesan'], ENT_QUOTES, 'UTF-8'),
+            'tipe' => htmlspecialchars($row['tipe'], ENT_QUOTES, 'UTF-8'),
+            'is_read' => (int)$row['is_read'],
+            'created_at' => $row['created_at']
+        ];
+    }
+    $stmt->close();
 }
 
 /* =========================================================
@@ -35,269 +58,338 @@ $popupNotifs = [];
 $stmt2 = $conn->prepare("
     SELECT id_notifikasi, id_pinjam, judul, pesan, tipe, created_at
     FROM notifikasi
-    WHERE id_user = ?
-      AND is_read = 0
+    WHERE id_user = ? AND is_read = 0
     ORDER BY created_at DESC
     LIMIT 5
 ");
-$stmt2->bind_param("i", $id_user);
-$stmt2->execute();
-$res2 = $stmt2->get_result();
 
-while ($row = $res2->fetch_assoc()) {
-    // tentukan link berdasarkan tipe
-    $linkTujuan = '#';
-    if ($row['tipe'] === 'peminjaman') {
-        $linkTujuan = 'peminjaman_saya.php#pinjam' . $row['id_pinjam'];
-    } elseif ($row['tipe'] === 'pengembalian') {
-        $linkTujuan = 'riwayat.php#kembali' . $row['id_pinjam'];
+if ($stmt2) {
+    $stmt2->bind_param("i", $id_user);
+    $stmt2->execute();
+    $result2 = $stmt2->get_result();
+    
+    while ($row = $result2->fetch_assoc()) {
+        // Tentukan link berdasarkan tipe dengan validasi
+        $linkTujuan = '#';
+        $tipe = strtolower(trim($row['tipe']));
+        $id_pinjam = (int)$row['id_pinjam'];
+        
+        if ($tipe === 'peminjaman' && $id_pinjam > 0) {
+            $linkTujuan = 'peminjaman_saya.php#pinjam' . $id_pinjam;
+        } elseif ($tipe === 'pengembalian' && $id_pinjam > 0) {
+            $linkTujuan = 'riwayat.php#kembali' . $id_pinjam;
+        }
+
+        $popupNotifs[] = [
+            'judul' => htmlspecialchars($row['judul'], ENT_QUOTES, 'UTF-8'),
+            'pesan' => htmlspecialchars($row['pesan'], ENT_QUOTES, 'UTF-8'),
+            'tipe'  => $tipe,
+            'link'  => htmlspecialchars($linkTujuan, ENT_QUOTES, 'UTF-8'),
+            'waktu' => format_datetime($row['created_at'])
+        ];
     }
-
-    $popupNotifs[] = [
-        'judul' => $row['judul'],
-        'pesan' => $row['pesan'],
-        'tipe'  => strtolower($row['tipe']),
-        'link'  => $linkTujuan,
-        'waktu' => date('d-m-Y H:i', strtotime($row['created_at']))
-    ];
-}
-
-/* Hitung jumlah popup notif */
-$jumlahNotif = count($popupNotifs);
-
-/* Setelah popup selesai diambil → tandai sebagai dibaca */
-if ($jumlahNotif > 0) {
-    $upd = $conn->prepare("UPDATE notifikasi SET is_read = 1 WHERE id_user = ? AND is_read = 0");
-    $upd->bind_param("i", $id_user);
-    $upd->execute();
+    $stmt2->close();
 }
 
 /* =========================================================
-   MEMUAT TEMPLATE HEADER & NAVBAR
+   3) STATISTIK DASHBOARD - PREPARED STATEMENTS
    ========================================================= */
+// Total peminjaman user
+$totalPeminjaman = 0;
+$stmt_total = $conn->prepare("SELECT COUNT(*) as total FROM peminjaman WHERE id_user = ?");
+if ($stmt_total) {
+    $stmt_total->bind_param("i", $id_user);
+    $stmt_total->execute();
+    $result_total = $stmt_total->get_result();
+    if ($row = $result_total->fetch_assoc()) {
+        $totalPeminjaman = (int)$row['total'];
+    }
+    $stmt_total->close();
+}
+
+// Peminjaman menunggu
+$totalMenunggu = 0;
+$stmt_menunggu = $conn->prepare("SELECT COUNT(*) as total FROM peminjaman WHERE id_user = ? AND status = 'menunggu'");
+if ($stmt_menunggu) {
+    $stmt_menunggu->bind_param("i", $id_user);
+    $stmt_menunggu->execute();
+    $result_menunggu = $stmt_menunggu->get_result();
+    if ($row = $result_menunggu->fetch_assoc()) {
+        $totalMenunggu = (int)$row['total'];
+    }
+    $stmt_menunggu->close();
+}
+
+// Peminjaman diterima
+$totalDiterima = 0;
+$stmt_diterima = $conn->prepare("SELECT COUNT(*) as total FROM peminjaman WHERE id_user = ? AND status = 'diterima'");
+if ($stmt_diterima) {
+    $stmt_diterima->bind_param("i", $id_user);
+    $stmt_diterima->execute();
+    $result_diterima = $stmt_diterima->get_result();
+    if ($row = $result_diterima->fetch_assoc()) {
+        $totalDiterima = (int)$row['total'];
+    }
+    $stmt_diterima->close();
+}
+
 include '../includes/peminjam/header.php';
 include '../includes/peminjam/navbar.php';
 ?>
 
-<!-- Tambahan CSS khusus halaman ini (hero & kartu) -->
-<style>
-    /* ======== HERO ======== */
-    .hero {
-        height: 70vh;
-        background: url('../assets/img/gedung.jpg') center/cover no-repeat;
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        color: #ffffff;
-    }
-    .hero::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        background: rgba(0,0,0,0.55);
-    }
-    .hero-content {
-        position: relative;
-        z-index: 2;
-        animation: fadeIn 1.5s ease;
-    }
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(30px); }
-        to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .btn-main {
-        background-color: #ffb703;
-        color: #0b2c61;
-        font-weight: 600;
-        border-radius: 30px;
-        padding: 10px 24px;
-        transition: 0.3s;
-    }
-    .btn-main:hover {
-        background-color: #ffc933;
-        transform: translateY(-2px);
-    }
-
-    .card {
-        border: none;
-        border-radius: 15px;
-        padding: 0;
-        background: #fff;
-        transition: all 0.3s ease;
-        overflow: hidden;
-    }
-    .card:hover {
-        transform: translateY(-8px);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.12);
-    }
-    .card-img-top {
-        border-radius: 15px 15px 0 0;
-    }
-
-    /* popup notif (container ada di footer.css, ini opsional kalau belum) */
-    #notifPopup {
-        position: fixed;
-        top: 80px;
-        right: 20px;
-        z-index: 1050;
-        max-width: 320px;
-        width: 100%;
-    }
-    .notif-popup-item {
-        background: #fff;
-        border-left: 4px solid #0b2c61;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        border-radius: 8px;
-        padding: 12px 14px;
-        margin-bottom: 10px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        font-size: 0.9rem;
-    }
-    .notif-popup-item.success { border-left-color: #16a34a; }
-    .notif-popup-item.warning { border-left-color: #f59e0b; }
-    .notif-popup-item.info    { border-left-color: #0b2c61; }
-    .notif-popup-item .title { font-weight: 600; margin-bottom: 4px; color: #0b2c61; }
-    .notif-popup-item .time  { font-size: 11px; color: #6b7280; }
-</style>
-
-<!-- ========================================================= -->
-<!--                     HERO SECTION                          -->
-<!-- ========================================================= -->
-<section class="hero">
+<!-- HERO SECTION -->
+<section class="hero-dashboard">
     <div class="hero-content">
-        <h1 class="fw-bold">Selamat Datang, <?= htmlspecialchars($nama_user); ?> 👋</h1>
-        <p class="lead">Kelola dan ajukan peminjaman fasilitas kampus secara digital.</p>
-        <a href="fasilitas.php" class="btn btn-main mt-3">
-            <i class="bi bi-building me-2"></i>Lihat Fasilitas
-        </a>
+        <div class="container">
+            <h1 class="hero-title" data-aos="fade-up">
+                Selamat Datang, <span class="text-accent"><?= $nama_user ?></span> 👋
+            </h1>
+            <p class="hero-subtitle" data-aos="fade-up" data-aos-delay="100">
+                Kelola dan ajukan peminjaman fasilitas kampus secara digital dengan mudah
+            </p>
+            <div class="hero-actions" data-aos="fade-up" data-aos-delay="200">
+                <a href="fasilitas.php" class="btn-hero-primary">
+                    <i class="bi bi-building me-2"></i>Lihat Fasilitas
+                </a>
+                <a href="peminjaman_saya.php" class="btn-hero-secondary">
+                    <i class="bi bi-clipboard-check me-2"></i>Peminjaman Saya
+                </a>
+            </div>
+        </div>
     </div>
 </section>
 
-<!-- ========================================================= -->
-<!--                  SECTION INFORMASI                        -->
-<!-- ========================================================= -->
-<section class="py-5 bg-light" data-aos="fade-up">
+<!-- STATISTIK SECTION -->
+<section class="stats-section">
     <div class="container">
+        <div class="row g-4">
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="100">
+                <div class="stat-card">
+                    <div class="stat-icon bg-primary">
+                        <i class="bi bi-clipboard-data"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3><?= $totalPeminjaman ?></h3>
+                        <p>Total Peminjaman</p>
+                    </div>
+                </div>
+            </div>
 
-        <div class="text-center mb-5">
-            <h2 class="fw-bold text-primary">E-Fasilitas Kampus</h2>
-            <p class="text-muted mt-3 fs-5">
-                E-Fasilitas Politeknik Negeri Bengkalis merupakan sistem digital yang memudahkan
-                mahasiswa dan dosen dalam proses peminjaman fasilitas kampus.
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="200">
+                <div class="stat-card">
+                    <div class="stat-icon bg-warning">
+                        <i class="bi bi-clock-history"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3><?= $totalMenunggu ?></h3>
+                        <p>Menunggu Approval</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="300">
+                <div class="stat-card">
+                    <div class="stat-icon bg-success">
+                        <i class="bi bi-check-circle"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3><?= $totalDiterima ?></h3>
+                        <p>Peminjaman Diterima</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- INFORMASI SECTION -->
+<section class="info-section">
+    <div class="container">
+        <div class="section-header text-center mb-5">
+            <h2 class="section-title" data-aos="fade-up">Tentang E-Fasilitas</h2>
+            <p class="section-subtitle" data-aos="fade-up" data-aos-delay="100">
+                Sistem Digital Peminjaman Fasilitas Kampus Politeknik Negeri Bengkalis
             </p>
         </div>
 
-        <div class="text-center mb-4">
-            <h3 class="fw-bold text-dark">Fasilitas Populer</h3>
-            <p class="text-muted">Beberapa fasilitas favorit pengguna.</p>
+        <div class="row align-items-center mb-5">
+            <div class="col-lg-6" data-aos="fade-right">
+                <h3 class="fw-bold text-primary mb-3">Apa itu E-Fasilitas?</h3>
+                <p class="text-muted" style="text-align: justify; line-height: 1.8;">
+                    E-Fasilitas adalah platform digital yang memudahkan civitas akademika 
+                    Politeknik Negeri Bengkalis dalam mengajukan peminjaman fasilitas kampus 
+                    seperti ruang kelas, laboratorium, aula, kendaraan, dan fasilitas lainnya 
+                    secara online. Sistem ini dirancang untuk meningkatkan efisiensi dan 
+                    transparansi dalam proses peminjaman.
+                </p>
+            </div>
+            <div class="col-lg-6" data-aos="fade-left">
+                <img src="../assets/img/gedung.jpg" alt="Kampus" class="img-fluid rounded shadow">
+            </div>
         </div>
 
-        <div class="row g-4 justify-content-center">
+        <!-- Fasilitas Populer -->
+        <div class="text-center mb-4">
+            <h3 class="fw-bold text-dark" data-aos="fade-up">Fasilitas Populer</h3>
+            <p class="text-muted" data-aos="fade-up" data-aos-delay="100">
+                Beberapa fasilitas yang sering dipinjam oleh mahasiswa dan dosen
+            </p>
+        </div>
+
+        <div class="row g-4">
             <?php
+            // Data fasilitas dengan validasi
             $fasilitas = [
-                ["img" => "aula.jpg",          "nama" => "Aula Serbaguna",     "desc" => "Tempat seminar & acara kampus."],
-                ["img" => "lab.jpg", "nama" => "Lab Komputer",       "desc" => "Perangkat modern untuk praktikum."],
-                ["img" => "ruang rapat.jpg",  "nama" => "Ruang Rapat",        "desc" => "Tempat pertemuan resmi."],
-                ["img" => "lapangan.jpg",     "nama" => "Lapangan Olahraga",  "desc" => "Kegiatan olahraga & event."]
+                ["img" => "aula.jpg", "nama" => "Aula Serbaguna", "desc" => "Tempat seminar & acara kampus"],
+                ["img" => "lab.jpg", "nama" => "Lab Komputer", "desc" => "Perangkat modern untuk praktikum"],
+                ["img" => "ruang rapat.jpg", "nama" => "Ruang Rapat", "desc" => "Tempat pertemuan resmi"],
+                ["img" => "lapangan.jpg", "nama" => "Lapangan Olahraga", "desc" => "Kegiatan olahraga & event"]
             ];
 
-            foreach ($fasilitas as $f): ?>
-                <div class="col-lg-3 col-md-4 col-sm-6" data-aos="zoom-in">
-                    <div class="card h-100">
-                        <!-- PASTIKAN file ini ada di: /assets/img/aula.jpg, lab_komputer.jpg, dst -->
-                        <img src="../assets/img/<?= htmlspecialchars($f['img']); ?>" 
-                             class="card-img-top"
-                             alt="<?= htmlspecialchars($f['nama']); ?>" 
-                             style="height:200px; object-fit:cover;">
-                        <div class="card-body text-center">
-                            <h6 class="fw-bold"><?= htmlspecialchars($f['nama']); ?></h6>
-                            <p class="text-muted small mb-0"><?= htmlspecialchars($f['desc']); ?></p>
+            foreach ($fasilitas as $index => $f): 
+                // Sanitasi data sebelum ditampilkan
+                $img_name = htmlspecialchars($f['img'], ENT_QUOTES, 'UTF-8');
+                $nama = htmlspecialchars($f['nama'], ENT_QUOTES, 'UTF-8');
+                $desc = htmlspecialchars($f['desc'], ENT_QUOTES, 'UTF-8');
+            ?>
+                <div class="col-lg-3 col-md-6" data-aos="zoom-in" data-aos-delay="<?= ($index + 1) * 100 ?>">
+                    <div class="facility-card">
+                        <img src="../assets/img/<?= $img_name ?>" 
+                             class="facility-img" 
+                             alt="<?= $nama ?>">
+                        <div class="facility-body">
+                            <h5 class="facility-title"><?= $nama ?></h5>
+                            <p class="facility-desc"><?= $desc ?></p>
                         </div>
                     </div>
                 </div>
             <?php endforeach; ?>
         </div>
 
-        <div class="text-center mt-5">
-            <a href="fasilitas.php" class="btn btn-primary px-4 py-2 shadow-sm">
-                <i class="bi bi-eye me-1"></i> Lihat Semua Fasilitas
+        <div class="text-center mt-5" data-aos="fade-up">
+            <a href="fasilitas.php" class="btn-primary-custom">
+                <i class="bi bi-eye me-2"></i>Lihat Semua Fasilitas
             </a>
         </div>
-
     </div>
 </section>
 
-<!-- ========================================================= -->
-<!--                  MODAL DETAIL NOTIFIKASI                  -->
-<!-- ========================================================= -->
+<!-- MODAL DETAIL NOTIFIKASI -->
 <?php foreach ($notifikasiList as $n): ?>
     <?php
-    // Link "Detail"
+    // Tentukan link dengan validasi
     $linkTujuan = '#';
-    if ($n['tipe'] === 'peminjaman') {
-        $linkTujuan = 'peminjaman_saya.php#pinjam' . $n['id_pinjam'];
-    } elseif ($n['tipe'] === 'pengembalian') {
-        $linkTujuan = 'riwayat.php#kembali' . $n['id_pinjam'];
+    $tipe = strtolower($n['tipe']);
+    $id_pinjam = (int)$n['id_pinjam'];
+    
+    if ($tipe === 'peminjaman' && $id_pinjam > 0) {
+        $linkTujuan = 'peminjaman_saya.php#pinjam' . $id_pinjam;
+    } elseif ($tipe === 'pengembalian' && $id_pinjam > 0) {
+        $linkTujuan = 'riwayat.php#kembali' . $id_pinjam;
     }
     ?>
-
-    <div class="modal fade" id="modalNotif<?= $n['id_notifikasi']; ?>" tabindex="-1">
+    <div class="modal fade" id="modalNotif<?= $n['id_notifikasi'] ?>" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title"><?= htmlspecialchars($n['judul']); ?></h5>
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: white;">
+                    <h5 class="modal-title">
+                        <i class="bi bi-bell me-2"></i>
+                        <?= $n['judul'] ?>
+                    </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p><?= nl2br(htmlspecialchars($n['pesan'])); ?></p>
-                    <small class="text-muted">Diterima: <?= date('d-m-Y H:i', strtotime($n['created_at'])); ?></small>
+                    <p><?= nl2br($n['pesan']) ?></p>
+                    <hr>
+                    <small class="text-muted">
+                        <i class="bi bi-clock me-1"></i>
+                        <?= format_datetime($n['created_at']) ?>
+                    </small>
                 </div>
                 <div class="modal-footer">
-                    <a href="<?= $linkTujuan; ?>" class="btn btn-outline-primary btn-sm">
-                        <i class="bi bi-box-arrow-right me-1"></i> Buka Halaman
-                    </a>
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+                    <?php if ($linkTujuan !== '#'): ?>
+                        <a href="<?= htmlspecialchars($linkTujuan, ENT_QUOTES, 'UTF-8') ?>" class="btn btn-primary btn-sm">
+                            <i class="bi bi-box-arrow-right me-1"></i>Buka Halaman
+                        </a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
     </div>
 <?php endforeach; ?>
 
-<!-- ========================================================= -->
-<!--            CONTAINER POPUP NOTIFIKASI BARU                -->
-<!-- ========================================================= -->
+<!-- POPUP NOTIFIKASI -->
 <div id="notifPopup"></div>
 
 <?php include '../includes/peminjam/footer.php'; ?>
 
 <script>
-AOS.init({ duration: 1000, once: true });
+// Initialize AOS
+AOS.init({ duration: 1000, once: true, offset: 100 });
 
+// Notification Popup Handler dengan keamanan XSS
 document.addEventListener("DOMContentLoaded", function () {
     const popup = document.getElementById("notifPopup");
-    const notifs = <?= json_encode($popupNotifs); ?>;
+    const notifs = <?= json_encode($popupNotifs, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
     notifs.forEach((n, i) => {
         const div = document.createElement("div");
         let tipeClass = n.tipe || 'info';
 
         div.className = "notif-popup-item " + tipeClass;
-        div.innerHTML = `
-            <div class="title">${n.judul}</div>
-            <div>${n.pesan}</div>
-            <div class="time">${n.waktu}</div>
-        `;
-        div.onclick = () => {
-            if (n.link && n.link !== '#') {
+        
+        // Buat elemen dengan DOM manipulation untuk keamanan
+        const header = document.createElement("div");
+        header.className = "notif-popup-header";
+        
+        const title = document.createElement("strong");
+        title.innerHTML = '<i class="bi bi-bell me-2"></i>' + n.judul;
+        
+        const closeBtn = document.createElement("span");
+        closeBtn.className = "notif-popup-close";
+        closeBtn.innerHTML = "&times;";
+        closeBtn.onclick = () => div.remove();
+        
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+        
+        const body = document.createElement("div");
+        body.className = "notif-popup-body";
+        body.textContent = n.pesan;
+        
+        const time = document.createElement("div");
+        time.className = "notif-popup-time";
+        time.innerHTML = '<i class="bi bi-clock me-1"></i>' + n.waktu;
+        
+        div.appendChild(header);
+        div.appendChild(body);
+        div.appendChild(time);
+        
+        // Click handler dengan validasi
+        div.onclick = (e) => {
+            if (e.target !== closeBtn && n.link && n.link !== '#') {
                 window.location.href = n.link;
             }
         };
 
         popup.appendChild(div);
-        setTimeout(() => div.remove(), 8000 + i * 1200);
+        
+        // Auto-remove dengan animasi
+        setTimeout(() => {
+            div.style.animation = 'slideOut 0.5s ease';
+            setTimeout(() => div.remove(), 500);
+        }, 8000 + i * 1200);
     });
+});
+
+// Navbar scroll effect
+window.addEventListener('scroll', function() {
+    const navbar = document.querySelector('.navbar');
+    if (window.scrollY > 50) {
+        navbar.classList.add('scrolled');
+    } else {
+        navbar.classList.remove('scrolled');
+    }
 });
 </script>

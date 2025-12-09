@@ -3,11 +3,6 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-
-/**
- * Fungsi wajib login
- * Memastikan user sudah login sebelum mengakses halaman
- */
 function require_login() {
     if (!isset($_SESSION['id_user'])) {
 
