@@ -3,11 +3,45 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Pastikan hanya super_admin & bagian_umum
+if (
+    !isset($_SESSION['id_user']) ||
+    !isset($_SESSION['role']) ||
+    !in_array($_SESSION['role'], ['super_admin', 'bagian_umum'], true)
+) {
+    header("Location: ../auth/login.php");
+    exit;
+}
+
 include_once __DIR__ . '/../../config/koneksi.php';
 
 $id_user_login = isset($_SESSION['id_user']) ? (int)$_SESSION['id_user'] : 0;
 $namaUser      = $_SESSION['nama'] ?? 'Admin';
 $role          = $_SESSION['role'] ?? '';
+
+// Jika tidak ada user login, hentikan
+if ($id_user_login <= 0) {
+    header("Location: ../auth/login.php");
+    exit;
+}
+
+/* =========================================================
+   TANDAI SEMUA NOTIF SEBAGAI SUDAH DIBACA (AJAX ?read=1)
+   ========================================================= */
+if (isset($_GET['read']) && $_GET['read'] === '1') {
+    $sqlMarkRead = "
+        UPDATE notifikasi 
+        SET is_read = 1, dibaca = NOW()
+        WHERE id_user = ? AND is_read = 0
+    ";
+    if ($stmtM = $conn->prepare($sqlMarkRead)) {
+        $stmtM->bind_param("i", $id_user_login);
+        $stmtM->execute();
+        $stmtM->close();
+    }
+    // balas singkat untuk fetch()
+    exit('OK');
+}
 
 /* =========================================================
    NOTIFIKASI (BADGE & LIST DROPDOWN) DENGAN PREPARED STATEMENT
@@ -15,71 +49,57 @@ $role          = $_SESSION['role'] ?? '';
 $jumlahNotif   = 0;
 $notifBellList = [];
 
-if ($id_user_login > 0) {
-
-    // Hitung notif belum dibaca (angka di lonceng)
-    $sqlCount = "
-        SELECT COUNT(*) AS total 
-        FROM notifikasi 
-        WHERE id_user = ? AND is_read = 0
-    ";
-    if ($stmtC = $conn->prepare($sqlCount)) {
-        $stmtC->bind_param("i", $id_user_login);
-        $stmtC->execute();
-        $resC = $stmtC->get_result();
-        if ($resC && $row = $resC->fetch_assoc()) {
-            $jumlahNotif = (int)$row['total'];
-        }
-        $stmtC->close();
+// Hitung notif belum dibaca (angka di lonceng)
+$sqlCount = "
+    SELECT COUNT(*) AS total 
+    FROM notifikasi 
+    WHERE id_user = ? AND is_read = 0
+";
+if ($stmtC = $conn->prepare($sqlCount)) {
+    $stmtC->bind_param("i", $id_user_login);
+    $stmtC->execute();
+    $resC = $stmtC->get_result();
+    if ($resC && $row = $resC->fetch_assoc()) {
+        $jumlahNotif = (int)$row['total'];
     }
-
-    // Ambil list notifikasi terbaru
-    $sqlList = "
-        SELECT 
-            id_notifikasi,
-            id_pinjam,
-            judul,
-            pesan,
-            tipe,
-            is_read,
-            created_at AS tanggal
-        FROM notifikasi
-        WHERE id_user = ?
-        ORDER BY created_at DESC
-        LIMIT 10
-    ";
-    if ($stmtL = $conn->prepare($sqlList)) {
-        $stmtL->bind_param("i", $id_user_login);
-        $stmtL->execute();
-        $resL = $stmtL->get_result();
-        if ($resL) {
-            while ($row = $resL->fetch_assoc()) {
-                $notifBellList[] = $row;
-            }
-        }
-        $stmtL->close();
-    }
+    $stmtC->close();
 }
 
-// Tandai semua notifikasi sebagai sudah dibaca (dipanggil via ?read=1)
-if (isset($_GET['read']) && $_GET['read'] == 1 && $id_user_login > 0) {
-    $sqlMarkRead = "
-        UPDATE notifikasi 
-        SET is_read = 1 
-        WHERE id_user = ?
-    ";
-    if ($stmtM = $conn->prepare($sqlMarkRead)) {
-        $stmtM->bind_param("i", $id_user_login);
-        $stmtM->execute();
-        $stmtM->close();
+// Ambil list notifikasi terbaru
+$sqlList = "
+    SELECT 
+        id_notifikasi,
+        id_pinjam,
+        judul,
+        pesan,
+        tipe,
+        is_read,
+        created_at AS tanggal
+    FROM notifikasi
+    WHERE id_user = ?
+    ORDER BY created_at DESC
+    LIMIT 10
+";
+if ($stmtL = $conn->prepare($sqlList)) {
+    $stmtL->bind_param("i", $id_user_login);
+    $stmtL->execute();
+    $resL = $stmtL->get_result();
+    if ($resL) {
+        while ($row = $resL->fetch_assoc()) {
+            $notifBellList[] = $row;
+        }
     }
-    exit('OK');
+    $stmtL->close();
 }
 
 /* =========================================================
    FUNGSI INISIAL NAMA USER
    ========================================================= */
 function getUserInitials($name) {
+    $name = trim($name);
+    if ($name === '') {
+        return 'AD';
+    }
     $words = explode(' ', $name);
     if (count($words) >= 2) {
         return strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
@@ -206,7 +226,7 @@ body.sb-sidenav-toggled .hamburger-icon span:nth-child(3) {
         width: 32px;
         height: 32px;
     }
-    
+
     .navbar-brand-admin {
         font-size: 1.1rem;
     }
@@ -224,7 +244,7 @@ body.sb-sidenav-toggled .hamburger-icon span:nth-child(3) {
                 <span></span>
             </div>
         </button>
-        
+
         <!-- Brand dengan Logo -->
         <a class="navbar-brand-admin d-none d-md-flex" href="dashboard.php">
             <img src="../assets/img/Logo.png" alt="E-Fasilitas Logo" class="navbar-logo">
@@ -233,7 +253,7 @@ body.sb-sidenav-toggled .hamburger-icon span:nth-child(3) {
     </div>
 
     <div class="navbar-user">
-        
+
         <!-- Notifications -->
         <div class="navbar-notifications">
             <button class="btn-notification" id="notificationBtn" type="button">
@@ -281,10 +301,10 @@ body.sb-sidenav-toggled .hamburger-icon span:nth-child(3) {
                             <a href="<?= $link; ?>" class="dropdown-notifications-item <?= $isUnread; ?>">
                                 <div class="notification-title">
                                     <i class="fas <?= $iconClass; ?> me-2"></i>
-                                    <?= htmlspecialchars($n['judul']); ?>
+                                    <?= htmlspecialchars($n['judul'], ENT_QUOTES, 'UTF-8'); ?>
                                 </div>
                                 <div class="notification-text">
-                                    <?= htmlspecialchars(substr($n['pesan'], 0, 60)); ?>...
+                                    <?= htmlspecialchars(mb_strimwidth($n['pesan'], 0, 60, '...'), ENT_QUOTES, 'UTF-8'); ?>
                                 </div>
                                 <div class="notification-time">
                                     <i class="far fa-clock me-1"></i>
@@ -309,11 +329,11 @@ body.sb-sidenav-toggled .hamburger-icon span:nth-child(3) {
         <div class="dropdown">
             <button class="btn user-info" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                 <div class="user-avatar">
-                    <?= $userInitials; ?>
+                    <?= htmlspecialchars($userInitials, ENT_QUOTES, 'UTF-8'); ?>
                 </div>
                 <div class="user-details">
-                    <div class="user-name"><?= htmlspecialchars($namaUser); ?></div>
-                    <div class="user-role"><?= strtoupper($role); ?></div>
+                    <div class="user-name"><?= htmlspecialchars($namaUser, ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="user-role"><?= strtoupper(htmlspecialchars($role, ENT_QUOTES, 'UTF-8')); ?></div>
                 </div>
                 <i class="fas fa-chevron-down ms-2"></i>
             </button>
@@ -336,7 +356,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // ===== SIDEBAR TOGGLE =====
     const sidebarToggle = document.getElementById('sidebarToggle');
     const body          = document.body;
-    
+
     // Function untuk create ripple effect
     function createRipple(event) {
         const button = event.currentTarget;
@@ -345,27 +365,27 @@ document.addEventListener('DOMContentLoaded', function() {
         const size   = Math.max(rect.width, rect.height);
         const x      = event.clientX - rect.left - size / 2;
         const y      = event.clientY - rect.top - size / 2;
-        
+
         ripple.style.width  = size + 'px';
         ripple.style.height = size + 'px';
         ripple.style.left   = x + 'px';
         ripple.style.top    = y + 'px';
         ripple.classList.add('ripple-effect');
-        
+
         button.appendChild(ripple);
-        
+
         setTimeout(() => {
             ripple.remove();
         }, 600);
     }
-    
+
     // Toggle sidebar dengan animasi
     if (sidebarToggle) {
         sidebarToggle.addEventListener('click', function(e) {
             e.preventDefault();
             createRipple(e);
             body.classList.toggle('sb-sidenav-toggled');
-            
+
             // Simpan state ke localStorage
             if (body.classList.contains('sb-sidenav-toggled')) {
                 localStorage.setItem('sb|sidebar-toggle', 'true');
@@ -374,16 +394,16 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
+
     // Load saved state dari localStorage
     if (localStorage.getItem('sb|sidebar-toggle') === 'true') {
         body.classList.add('sb-sidenav-toggled');
     }
-    
+
     // ===== NOTIFICATION DROPDOWN =====
-    const notificationBtn     = document.getElementById('notificationBtn');
+    const notificationBtn      = document.getElementById('notificationBtn');
     const notificationDropdown = document.getElementById('notificationDropdown');
-    
+
     if (notificationBtn && notificationDropdown) {
         // Toggle dropdown saat tombol diklik
         notificationBtn.addEventListener('click', function(e) {
@@ -393,7 +413,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Panggil API tandai sudah dibaca
             markAllAsRead();
         });
-        
+
         // Tutup dropdown saat klik di luar area
         document.addEventListener('click', function(e) {
             if (!notificationBtn.contains(e.target) && !notificationDropdown.contains(e.target)) {
@@ -401,7 +421,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
+
     // ===== HANDLE WINDOW RESIZE =====
     let resizeTimer;
     window.addEventListener('resize', function() {

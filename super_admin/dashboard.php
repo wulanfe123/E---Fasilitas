@@ -2,132 +2,201 @@
 session_start();
 include '../config/koneksi.php';
 
-// Cek login
-if (!isset($_SESSION['id_user']) || !in_array($_SESSION['role'], ['super_admin', 'bagian_umum'])) {
+// Cek login & role
+if (
+    !isset($_SESSION['id_user']) ||
+    !isset($_SESSION['role']) ||
+    !in_array($_SESSION['role'], ['super_admin', 'bagian_umum'], true)
+) {
     header("Location: ../auth/login.php");
     exit;
 }
 
-$pageTitle = "Dashboard Admin";
-$currentPage = "dashboard";
-$id_user_login = (int)$_SESSION['id_user'];
-$nama_admin = $_SESSION['nama'] ?? 'Admin';
+$pageTitle    = "Dashboard Admin";
+$currentPage  = "dashboard";
+$id_user_login = (int) ($_SESSION['id_user'] ?? 0);
+$nama_admin   = $_SESSION['nama'] ?? 'Admin';
 
-$tahunSekarang = date('Y');
+if ($id_user_login <= 0) {
+    // Jika session id_user tidak valid, paksa login ulang
+    session_destroy();
+    header("Location: ../auth/login.php");
+    exit;
+}
 
-/* STATISTIK DASHBOARD */
-$statUsers = 0;
-$statFasilitas = 0;
-$statPeminjaman = 0;
+$tahunSekarang = (int) date('Y');
+
+/* ================================
+   STATISTIK DASHBOARD
+   ================================ */
+$statUsers        = 0;
+$statFasilitas    = 0;
+$statPeminjaman   = 0;
 $statPengembalian = 0;
 $statTindakLanjut = 0;
-$statUsulan = 0;
+$statUsulan       = 0;
 
 // Total pengguna
-$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM users");
-if ($res && $row = mysqli_fetch_assoc($res)) {
-    $statUsers = (int)$row['total'];
+$sqlUsers = "SELECT COUNT(*) AS total FROM users";
+if ($stmt = $conn->prepare($sqlUsers)) {
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res && $row = $res->fetch_assoc()) {
+        $statUsers = (int) $row['total'];
+    }
+    $stmt->close();
 }
 
 // Total fasilitas
-$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM fasilitas");
-if ($res && $row = mysqli_fetch_assoc($res)) {
-    $statFasilitas = (int)$row['total'];
+$sqlFasilitas = "SELECT COUNT(*) AS total FROM fasilitas";
+if ($stmt = $conn->prepare($sqlFasilitas)) {
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res && $row = $res->fetch_assoc()) {
+        $statFasilitas = (int) $row['total'];
+    }
+    $stmt->close();
 }
 
 // Total peminjaman
-$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM peminjaman");
-if ($res && $row = mysqli_fetch_assoc($res)) {
-    $statPeminjaman = (int)$row['total'];
+$sqlPeminjamanTotal = "SELECT COUNT(*) AS total FROM peminjaman";
+if ($stmt = $conn->prepare($sqlPeminjamanTotal)) {
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res && $row = $res->fetch_assoc()) {
+        $statPeminjaman = (int) $row['total'];
+    }
+    $stmt->close();
 }
 
 // Total usulan (pending)
-$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM peminjaman WHERE status = 'usulan'");
-if ($res && $row = mysqli_fetch_assoc($res)) {
-    $statUsulan = (int)$row['total'];
+$statusUsulan = 'usulan';
+$sqlUsulan = "SELECT COUNT(*) AS total FROM peminjaman WHERE status = ?";
+if ($stmt = $conn->prepare($sqlUsulan)) {
+    $stmt->bind_param("s", $statusUsulan);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res && $row = $res->fetch_assoc()) {
+        $statUsulan = (int) $row['total'];
+    }
+    $stmt->close();
 }
 
 // Total pengembalian
-$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pengembalian");
-if ($res && $row = mysqli_fetch_assoc($res)) {
-    $statPengembalian = (int)$row['total'];
+$sqlPengembalian = "SELECT COUNT(*) AS total FROM pengembalian";
+if ($stmt = $conn->prepare($sqlPengembalian)) {
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res && $row = $res->fetch_assoc()) {
+        $statPengembalian = (int) $row['total'];
+    }
+    $stmt->close();
 }
 
 // Total tindak lanjut
-$res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM tindaklanjut");
-if ($res && $row = mysqli_fetch_assoc($res)) {
-    $statTindakLanjut = (int)$row['total'];
+$sqlTindak = "SELECT COUNT(*) AS total FROM tindaklanjut";
+if ($stmt = $conn->prepare($sqlTindak)) {
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res && $row = $res->fetch_assoc()) {
+        $statTindakLanjut = (int) $row['total'];
+    }
+    $stmt->close();
 }
 
-/* GRAFIK PEMINJAMAN PER BULAN */
+/* ================================
+   GRAFIK PEMINJAMAN PER BULAN
+   ================================ */
 $bulanLabelsPeminjaman = [];
-$peminjamanData = [];
+$peminjamanData        = [];
 
-$qPeminjaman = mysqli_query($conn, "
+$sqlGrafikPeminjaman = "
     SELECT 
         MONTH(tanggal_mulai) AS bulan,
         COUNT(*) AS total
     FROM peminjaman
-    WHERE YEAR(tanggal_mulai) = $tahunSekarang
+    WHERE YEAR(tanggal_mulai) = ?
     GROUP BY MONTH(tanggal_mulai)
     ORDER BY bulan ASC
-");
+";
 
-if ($qPeminjaman) {
-    while ($row = mysqli_fetch_assoc($qPeminjaman)) {
-        $namaBulan = date('M', mktime(0, 0, 0, $row['bulan'], 10));
-        $bulanLabelsPeminjaman[] = $namaBulan;
-        $peminjamanData[] = (int)$row['total'];
+if ($stmt = $conn->prepare($sqlGrafikPeminjaman)) {
+    $stmt->bind_param("i", $tahunSekarang);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $namaBulan               = date('M', mktime(0, 0, 0, (int)$row['bulan'], 10));
+            $bulanLabelsPeminjaman[] = $namaBulan;
+            $peminjamanData[]        = (int) $row['total'];
+        }
     }
+    $stmt->close();
 }
 
-/* GRAFIK KONDISI PENGEMBALIAN */
+/* ================================
+   GRAFIK KONDISI PENGEMBALIAN
+   ================================ */
 $bulanLabelsKondisi = [];
-$dataKondisiBaik = [];
-$dataKondisiRusak = [];
+$dataKondisiBaik    = [];
+$dataKondisiRusak   = [];
 
-$qKondisi = mysqli_query($conn, "
+$sqlGrafikKondisi = "
     SELECT 
         MONTH(tgl_kembali) AS bulan,
         SUM(CASE WHEN kondisi = 'baik' THEN 1 ELSE 0 END) AS baik,
         SUM(CASE WHEN kondisi = 'rusak' THEN 1 ELSE 0 END) AS rusak
     FROM pengembalian
-    WHERE YEAR(tgl_kembali) = $tahunSekarang
+    WHERE YEAR(tgl_kembali) = ?
     GROUP BY MONTH(tgl_kembali)
     ORDER BY bulan ASC
-");
+";
 
-if ($qKondisi) {
-    while ($row = mysqli_fetch_assoc($qKondisi)) {
-        $namaBulan = date('M', mktime(0, 0, 0, $row['bulan'], 10));
-        $bulanLabelsKondisi[] = $namaBulan;
-        $dataKondisiBaik[] = (int)($row['baik'] ?? 0);
-        $dataKondisiRusak[] = (int)($row['rusak'] ?? 0);
+if ($stmt = $conn->prepare($sqlGrafikKondisi)) {
+    $stmt->bind_param("i", $tahunSekarang);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $namaBulan            = date('M', mktime(0, 0, 0, (int)$row['bulan'], 10));
+            $bulanLabelsKondisi[] = $namaBulan;
+            $dataKondisiBaik[]    = (int) ($row['baik'] ?? 0);
+            $dataKondisiRusak[]   = (int) ($row['rusak'] ?? 0);
+        }
     }
+    $stmt->close();
 }
 
-/* PEMINJAMAN TERBARU */
+/* ================================
+   PEMINJAMAN TERBARU
+   ================================ */
 $peminjamanTerbaru = [];
-$qTerbaru = mysqli_query($conn, "
+
+$sqlTerbaru = "
     SELECT 
         p.id_pinjam,
         p.tanggal_mulai,
         p.status,
         u.nama AS nama_peminjam,
-        GROUP_CONCAT(f.nama_fasilitas SEPARATOR ', ') AS fasilitas
+        COALESCE(GROUP_CONCAT(f.nama_fasilitas SEPARATOR ', '), '-') AS fasilitas
     FROM peminjaman p
     JOIN users u ON p.id_user = u.id_user
     LEFT JOIN daftar_peminjaman_fasilitas df ON p.id_pinjam = df.id_pinjam
     LEFT JOIN fasilitas f ON df.id_fasilitas = f.id_fasilitas
-    GROUP BY p.id_pinjam
+    GROUP BY p.id_pinjam, p.tanggal_mulai, p.status, u.nama
     ORDER BY p.id_pinjam DESC
     LIMIT 5
-");
+";
 
-if ($qTerbaru) {
-    while ($row = mysqli_fetch_assoc($qTerbaru)) {
-        $peminjamanTerbaru[] = $row;
+if ($stmt = $conn->prepare($sqlTerbaru)) {
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $peminjamanTerbaru[] = $row;
+        }
     }
+    $stmt->close();
 }
 
 // Include header, sidebar, navbar
@@ -152,7 +221,7 @@ include '../includes/admin/sidebar.php';
                         Dashboard Admin
                     </h1>
                     <p class="page-subtitle">
-                        Selamat datang, <strong><?= htmlspecialchars($nama_admin); ?></strong>! 
+                        Selamat datang, <strong><?= htmlspecialchars($nama_admin, ENT_QUOTES, 'UTF-8'); ?></strong>! 
                         Ringkasan aktivitas peminjaman fasilitas kampus.
                     </p>
                 </div>
@@ -373,24 +442,24 @@ include '../includes/admin/sidebar.php';
                                 <?php foreach ($peminjamanTerbaru as $item): 
                                     $status = strtolower($item['status']);
                                     $statusClass = 'secondary';
-                                    $statusIcon = 'circle';
+                                    $statusIcon  = 'circle';
                                     
                                     switch ($status) {
                                         case 'usulan':
                                             $statusClass = 'warning';
-                                            $statusIcon = 'clock';
+                                            $statusIcon  = 'clock';
                                             break;
                                         case 'diterima':
                                             $statusClass = 'success';
-                                            $statusIcon = 'check-circle';
+                                            $statusIcon  = 'check-circle';
                                             break;
                                         case 'ditolak':
                                             $statusClass = 'danger';
-                                            $statusIcon = 'times-circle';
+                                            $statusIcon  = 'times-circle';
                                             break;
                                         case 'selesai':
                                             $statusClass = 'info';
-                                            $statusIcon = 'check-double';
+                                            $statusIcon  = 'check-double';
                                             break;
                                     }
                                 ?>
@@ -400,10 +469,10 @@ include '../includes/admin/sidebar.php';
                                         </div>
                                         <div class="activity-content">
                                             <div class="activity-title">
-                                                #<?= $item['id_pinjam']; ?> - <?= htmlspecialchars($item['nama_peminjam']); ?>
+                                                #<?= (int)$item['id_pinjam']; ?> - <?= htmlspecialchars($item['nama_peminjam'], ENT_QUOTES, 'UTF-8'); ?>
                                             </div>
                                             <div class="activity-subtitle">
-                                                <?= htmlspecialchars($item['fasilitas'] ?? 'N/A'); ?>
+                                                <?= htmlspecialchars($item['fasilitas'] ?? 'N/A', ENT_QUOTES, 'UTF-8'); ?>
                                             </div>
                                             <div class="activity-meta">
                                                 <i class="far fa-calendar-alt"></i>
@@ -444,25 +513,9 @@ include '../includes/admin/sidebar.php';
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    
-    // Sidebar Toggle
-    const sidebarToggle = document.getElementById('sidebarToggle');
-    if (sidebarToggle) {
-        sidebarToggle.addEventListener('click', function(e) {
-            e.preventDefault();
-            document.body.classList.toggle('sb-sidenav-toggled');
-            localStorage.setItem('sb|sidebar-toggle', document.body.classList.contains('sb-sidenav-toggled'));
-        });
-    }
-    
-    // Restore sidebar state
-    if (localStorage.getItem('sb|sidebar-toggle') === 'true') {
-        document.body.classList.add('sb-sidenav-toggled');
-    }
-    
-    // Chart Peminjaman
+    // Sidebar state dari localStorage sudah di-handle di footer.js kamu
     const bulanLabelsPeminjaman = <?= json_encode($bulanLabelsPeminjaman) ?>;
-    const dataPeminjaman = <?= json_encode($peminjamanData) ?>;
+    const dataPeminjaman        = <?= json_encode($peminjamanData) ?>;
 
     const ctxPeminjaman = document.getElementById('chartPeminjaman');
     if (ctxPeminjaman) {
@@ -512,10 +565,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Chart Kondisi
     const bulanLabelsKondisi = <?= json_encode($bulanLabelsKondisi) ?>;
-    const dataKondisiBaik = <?= json_encode($dataKondisiBaik) ?>;
-    const dataKondisiRusak = <?= json_encode($dataKondisiRusak) ?>;
+    const dataKondisiBaik    = <?= json_encode($dataKondisiBaik) ?>;
+    const dataKondisiRusak   = <?= json_encode($dataKondisiRusak) ?>;
 
     const ctxKondisi = document.getElementById('chartKondisi');
     if (ctxKondisi) {

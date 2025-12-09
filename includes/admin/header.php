@@ -3,11 +3,16 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Security Check
-if (!isset($_SESSION['id_user']) || !in_array($_SESSION['role'], ['super_admin', 'bagian_umum'])) {
+// Security Check – hanya super_admin & bagian_umum yang boleh akses
+if (
+    !isset($_SESSION['id_user']) ||
+    !isset($_SESSION['role']) ||
+    !in_array($_SESSION['role'], ['super_admin', 'bagian_umum'], true)
+) {
     header("Location: ../auth/login.php");
     exit;
 }
+
 include '../config/koneksi.php';
 
 $id_user_login = (int) ($_SESSION['id_user'] ?? 0);
@@ -25,15 +30,15 @@ if ($id_user_login > 0) {
         $res = $stmt->get_result();
         if ($row = $res->fetch_assoc()) {
             if (!empty($row['nama'])) {
-                $namaUser = $row['nama'];
-                $_SESSION['nama'] = $row['nama'];       // sinkronkan session
+                $namaUser          = $row['nama'];
+                $_SESSION['nama']  = $row['nama'];       // sinkronkan session
             }
             if (!empty($row['username'])) {
-                $username = $row['username'];
+                $username            = $row['username'];
                 $_SESSION['username'] = $row['username'];
             }
             if (!empty($row['role'])) {
-                $role = $row['role'];
+                $role          = $row['role'];
                 $_SESSION['role'] = $row['role'];
             }
         }
@@ -49,14 +54,14 @@ if ($id_user_login > 0) {
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <meta name="description" content="Sistem Peminjaman Fasilitas Kampus" />
     <meta name="author" content="E-Fasilitas Polbeng" />
-    <title><?= $pageTitle ?? 'E-Fasilitas'; ?> - Admin Panel</title>
+    <title><?= htmlspecialchars($pageTitle ?? 'E-Fasilitas', ENT_QUOTES, 'UTF-8'); ?> - Admin Panel</title>
 
     <!-- Bootstrap 5.3.3 -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" 
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
 
     <!-- Font Awesome 6.5.1 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" 
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
           integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" />
 
     <!-- Google Fonts -->
