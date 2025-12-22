@@ -1,22 +1,5 @@
 <?php
-/**
- * login.php - Halaman Login E-Fasilitas
- * 
- * SKRIPSI: IMPLEMENTASI PREPARED STATEMENT PADA FORM INPUT 
- *          UNTUK MENCEGAH SQL INJECTION PADA APLIKASI WEB 
- *          PEMINJAMAN FASILITAS KAMPUS
- * 
- * Security Features:
- * - CSRF Token Protection
- * - Session Security
- * - Input Validation (client & server side)
- * - Security Headers
- * - Rate Limiting Prevention
- */
-
 session_start();
-
-// Regenerate session ID untuk mencegah session fixation
 if (!isset($_SESSION['initiated'])) {
     session_regenerate_id(true);
     $_SESSION['initiated'] = true;
@@ -41,13 +24,9 @@ if (isset($_SESSION['id_user'], $_SESSION['role'])) {
         }
     }
 }
-
-// Generate CSRF Token
 if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
-
-// Ambil error message (jika ada)
 $error = $_SESSION['error'] ?? '';
 unset($_SESSION['error']);
 
@@ -64,9 +43,9 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Login E-Fasilitas Politeknik Negeri Bengkalis - Sistem Peminjaman Fasilitas Kampus">
+  <meta name="description" content="Login Pemfas Politeknik Negeri Bengkalis - Sistem Peminjaman Fasilitas Kampus">
   <meta name="robots" content="noindex, nofollow">
-  <title>Login - E-Fasilitas Polbeng</title>
+  <title>Login - Pemfas Polbeng</title>
   
   <!-- Bootstrap & Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
@@ -95,8 +74,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
       min-height: 100vh;
       position: relative;
     }
-
-    /* Overlay dengan gradient */
     .overlay {
       position: fixed;
       inset: 0;
@@ -104,8 +81,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
       backdrop-filter: blur(5px);
       z-index: 0;
     }
-
-    /* Pattern Background */
     .overlay::after {
       content: '';
       position: absolute;
@@ -133,8 +108,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
       justify-content: center;
       padding: 20px;
     }
-
-    /* Login Card */
     .login-card {
       width: 100%;
       max-width: 450px;
@@ -155,8 +128,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
         transform: translateY(0);
       }
     }
-
-    /* Login Header */
     .login-header {
       background: linear-gradient(135deg, var(--primary-color) 0%, #0a2350 100%);
       color: white;
@@ -231,7 +202,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
       box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);
     }
 
-    /* Form Label */
     .form-label {
       font-weight: 600;
       color: var(--primary-color);
@@ -239,7 +209,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
       font-size: 0.9rem;
     }
 
-    /* Input Group */
     .input-group {
       border-radius: 12px;
       overflow: hidden;
@@ -275,13 +244,11 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
       border-color: #dc2626;
     }
 
-    /* Feedback validation */
     .invalid-feedback {
       font-size: 0.85rem;
       margin-top: 5px;
     }
 
-    /* Toggle Password */
     .toggle-pass {
       cursor: pointer;
       user-select: none;
@@ -293,7 +260,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
       color: var(--primary-color) !important;
     }
 
-    /* Login Button */
     .btn-login {
       background: linear-gradient(135deg, var(--primary-color) 0%, #0a2350 100%);
       color: white;
@@ -393,7 +359,7 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
       <!-- Header -->
       <div class="login-header">
         <img src="../assets/img/Logo.png" width="80" height="80" class="rounded-circle mb-3" alt="Logo Politeknik Negeri Bengkalis"/>
-        <h5 class="mb-1">E-Fasilitas</h5>
+        <h5 class="mb-1">Pemfas</h5>
         <small>Sistem Digital Peminjaman Fasilitas<br>Politeknik Negeri Bengkalis</small>
       </div>
 
@@ -409,8 +375,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
 
         <!-- Login Form -->
         <form action="proses_login.php" method="POST" id="loginForm" novalidate>
-          
-          <!-- CSRF Token (Security) -->
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
           
           <!-- Username -->
@@ -525,7 +489,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
 
       // Input Sanitization (Client-side)
       usernameInput.addEventListener('input', function() {
-        // Remove special characters except allowed ones
         this.value = this.value.replace(/[^a-zA-Z0-9_.-]/g, '');
       });
 
@@ -597,8 +560,6 @@ header("Content-Security-Policy: default-src 'self'; script-src 'self' https://c
       if (window.top !== window.self) {
         window.top.location = window.self.location;
       }
-
-      // Security: Clear password on page unload
       window.addEventListener('beforeunload', function() {
         passwordInput.value = '';
       });

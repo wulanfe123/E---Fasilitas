@@ -126,8 +126,6 @@ $qTL = $conn->query("
     GROUP BY tl.id_tindaklanjut
     ORDER BY tl.tanggal DESC
 ");
-
-// Judul kecil sesuai jenis
 if ($jenis == 'peminjaman') {
     $subTitle = 'Laporan Peminjaman & Pengembalian Fasilitas';
 } elseif ($jenis == 'riwayat') {
@@ -142,13 +140,13 @@ if ($jenis == 'peminjaman') {
 <html lang="id">
 <head>
     <meta charset="utf-8">
-    <title>Cetak Laporan - E-Fasilitas</title>
+    <title>Cetak Laporan - Pemfas</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
     <style>
         :root {
-            --primary-color: #0b2c61;  /* biru utama */
-            --accent-color:  #ffb703;  /* kuning aksen */
+            --primary-color: #0b2c61;  
+            --accent-color:  #ffb703;  
             --text-main:     #1f2933;
             --text-muted:    #6b7280;
         }
@@ -382,7 +380,7 @@ if ($jenis == 'peminjaman') {
                 <!-- Bisa taruh logo kampus di sini kalau mau -->
             </div>
             <div class="judul-laporan">
-                <h3>LAPORAN E-FASILITAS KAMPUS</h3>
+                <h3>LAPORAN Pemfas KAMPUS</h3>
                 <small><?= htmlspecialchars($subTitle); ?></small>
                 <?php if ($tgl_awal || $tgl_akhir): ?>
                     <small class="periode-text">

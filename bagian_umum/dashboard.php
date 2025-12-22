@@ -215,7 +215,7 @@ include '../includes/admin/sidebar.php';
                     </div>
                 </div>
 
-                <!-- Pengembalian Card (dipindah dari Statistik Cepat) -->
+                <!-- Pengembalian Card  -->
                 <div class="col-xl-3 col-md-6">
                     <div class="stat-card stat-card-blue">
                         <div class="stat-card-body">
@@ -234,10 +234,7 @@ include '../includes/admin/sidebar.php';
                     </div>
                 </div>
             </div>
-
-            <!-- Charts Section -->
             <div class="row g-4 mb-4">
-                <!-- Peminjaman Chart -->
                 <div class="col-xl-8">
                     <div class="chart-card">
                         <div class="chart-card-header">
@@ -260,8 +257,6 @@ include '../includes/admin/sidebar.php';
                         </div>
                     </div>
                 </div>
-
-                <!-- Quick Stats -->
                 <div class="col-xl-4">
                     <div class="quick-stats-card">
                         <div class="quick-stats-header">
@@ -272,7 +267,6 @@ include '../includes/admin/sidebar.php';
                         </div>
                         <div class="quick-stats-body">
                             
-                            <!-- Pengembalian di sini diganti menjadi Laporan -->
                             <div class="quick-stat-item">
                                 <div class="quick-stat-icon bg-success">
                                     <i class="fas fa-file-alt"></i>
@@ -423,7 +417,7 @@ include '../includes/admin/sidebar.php';
     <footer class="footer-admin">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+                <strong>Pemfas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus. | by WFE
             </div>
             <div>
                 Version 1.0

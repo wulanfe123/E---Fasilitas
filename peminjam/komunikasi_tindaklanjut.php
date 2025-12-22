@@ -1,18 +1,17 @@
 <?php
 session_start();
 if (!isset($_SESSION['id_user'])) {
-    header("Location: ../auth/login.php");
+    header("Location: ../../auth/login.php");  // ✅ FIXED
     exit;
 }
 
-include '../config/koneksi.php';
-include '../config/notifikasi_helper.php';
+include '../config/koneksi.php';          // ✅ FIXED
+include '../config/notifikasi_helper.php';// ✅ FIXED
 
-// Validasi ID user dari session dengan ketat
 $id_user_login = filter_var($_SESSION['id_user'], FILTER_VALIDATE_INT);
 if ($id_user_login === false || $id_user_login <= 0) {
     session_destroy();
-    header("Location: ../auth/login.php");
+    header("Location: ../../auth/login.php");  // ✅ FIXED
     exit;
 }
 

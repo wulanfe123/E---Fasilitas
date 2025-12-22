@@ -4,6 +4,9 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 include_once __DIR__ . '/../../config/koneksi.php';
+if (!isset($currentPage)) {
+    $currentPage = '';
+}
 
 // ===== FUNGSI MAP TIPE NOTIF KE 3 KATEGORI BESAR =====
 if (!function_exists('efas_map_notif_type')) {
@@ -347,7 +350,7 @@ if (isset($_GET['read'])) {
     <div class="container">
         <a class="navbar-brand" href="dashboard.php">
             <img src="../assets/img/Logo.png" alt="Logo" class="navbar-logo">
-            <span class="brand-text">E-Fasilitas</span>
+            <span class="brand-text">Pemfas</span>
         </a>
         
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -408,41 +411,62 @@ if (isset($_GET['read'])) {
                             </li>
                         <?php else: ?>
                             <?php foreach ($notifikasiList as $n): ?>
-                                <?php
-                                    $tipe_raw = $n['tipe'] ?? '';
-                                    $tipe_map = efas_map_notif_type($tipe_raw);
+                            <?php
+                                $tipe_raw = $n['tipe'] ?? '';
+                                $tipe_map = efas_map_notif_type($tipe_raw);
 
-                                    $iconClass = 'notif-icon ';
-                                    $iconBi    = 'bi-bell';
+                                $iconClass = 'notif-icon ';
+                                $iconBi    = 'bi-bell';
 
+                                if ($tipe_map === 'peminjaman') {
+                                    $iconClass .= 'peminjaman';
+                                    $iconBi    = 'bi-clipboard-check';
+                                } elseif ($tipe_map === 'pengembalian') {
+                                    $iconClass .= 'pengembalian';
+                                    $iconBi    = 'bi-box-arrow-in-left';
+                                } elseif ($tipe_map === 'tindaklanjut') {
+                                    $iconClass .= 'tindaklanjut';
+                                    $iconBi    = 'bi-exclamation-triangle';
+                                }
+
+                                $pesan_short     = strlen($n['pesan']) > 60 ? substr($n['pesan'], 0, 60) . '...' : $n['pesan'];
+                                $waktu_formatted = date('d M Y H:i', strtotime($n['tanggal']));
+
+                                // === TENTUKAN LINK BERDASARKAN TIPE ===
+                                $id_pinjam = (int)($n['id_pinjam'] ?? 0);
+                                $href      = '#';
+
+                                if ($id_pinjam > 0) {
                                     if ($tipe_map === 'peminjaman') {
-                                        $iconClass .= 'peminjaman';
-                                        $iconBi    = 'bi-clipboard-check';
-                                    } elseif ($tipe_map === 'pengembalian') {
-                                        $iconClass .= 'pengembalian';
-                                        $iconBi    = 'bi-box-arrow-in-left';
-                                    } elseif ($tipe_map === 'tindaklanjut') {
-                                        $iconClass .= 'tindaklanjut';
-                                        $iconBi    = 'bi-exclamation-triangle';
-                                    }
+                                        // Notif pengajuan / status peminjaman
+                                        $href = 'peminjaman_saya.php#pinjam' . $id_pinjam;
 
-                                    $pesan_short     = strlen($n['pesan']) > 60 ? substr($n['pesan'], 0, 60) . '...' : $n['pesan'];
-                                    $waktu_formatted = date('d M Y H:i', strtotime($n['tanggal']));
-                                ?>
-                                <li>
-                                    <a class="dropdown-item notif-item <?= $n['is_read'] == 0 ? 'unread' : '' ?>" 
-                                       href="peminjaman_saya.php?id=<?= htmlspecialchars($n['id_pinjam']); ?>">
-                                        <div class="<?= $iconClass ?>">
-                                            <i class="bi <?= $iconBi ?>"></i>
-                                        </div>
-                                        <div class="notif-content">
-                                            <strong><?= htmlspecialchars($n['judul']); ?></strong>
-                                            <p class="mb-2 small"><?= htmlspecialchars($pesan_short); ?></p>
-                                            <small><?= htmlspecialchars($waktu_formatted); ?></small>
-                                        </div>
-                                    </a>
-                                </li>
-                            <?php endforeach; ?>
+                                    } elseif ($tipe_map === 'pengembalian') {
+                                        // Notif pengembalian → halaman riwayat
+                                        $href = 'riwayat.php#kembali' . $id_pinjam;
+
+                                    } elseif ($tipe_map === 'tindaklanjut') {
+                                        // Notif kerusakan / tindak lanjut → komunikasi_tindaklanjut
+                                        $href = 'komunikasi_tindaklanjut.php?id_pinjam=' . $id_pinjam;
+                                    }
+                                }
+                            ?>
+                            <li>
+                                <a class="dropdown-item notif-item <?= $n['is_read'] == 0 ? 'unread' : '' ?>" 
+                                href="<?= htmlspecialchars($href, ENT_QUOTES, 'UTF-8'); ?>">
+                                    <div class="<?= $iconClass ?>">
+                                        <i class="bi <?= $iconBi ?>"></i>
+                                    </div>
+                                    <div class="notif-content">
+                                        <strong><?= htmlspecialchars($n['judul']); ?></strong>
+                                        <p class="mb-2 small"><?= htmlspecialchars($pesan_short); ?></p>
+                                        <small><?= htmlspecialchars($waktu_formatted); ?></small>
+                                    </div>
+                                </a>
+                            </li>
+                        <?php endforeach; ?>
+
+
                             
                             <li><hr class="dropdown-divider"></li>
                             <li>

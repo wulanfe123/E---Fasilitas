@@ -3,7 +3,7 @@
         <div class="row g-4">
             <div class="col-lg-4 col-md-6">
                 <div class="footer-about">
-                    <h5 class="footer-title">E-Fasilitas</h5>
+                    <h5 class="footer-title">Pemfas</h5>
                     <p>Sistem Digital Peminjaman Fasilitas Kampus Politeknik Negeri Bengkalis</p>
                     <div class="social-links mt-3">
    
@@ -38,7 +38,7 @@
         <hr class="footer-divider">
 
         <div class="footer-bottom text-center">
-            <p class="mb-0">&copy; 2025 E-Fasilitas - Politeknik Negeri Bengkalis. All Rights Reserved.</p>
+            <p class="mb-0">&copy; 2025 Pemfas - Polbeng. All Rights Reserved. | by WFE</p>
         </div>
     </div>
 </footer>

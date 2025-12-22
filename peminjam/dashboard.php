@@ -50,11 +50,11 @@ if ($stmt) {
     }
     $stmt->close();
 }
-
 /* =========================================================
    2) NOTIFIKASI BELUM DIBACA (untuk popup)
    ========================================================= */
 $popupNotifs = [];
+
 $stmt2 = $conn->prepare("
     SELECT id_notifikasi, id_pinjam, judul, pesan, tipe, created_at
     FROM notifikasi
@@ -69,15 +69,35 @@ if ($stmt2) {
     $result2 = $stmt2->get_result();
     
     while ($row = $result2->fetch_assoc()) {
-        // Tentukan link berdasarkan tipe dengan validasi
+
+        // Default: tidak ada link (hanya tampil pesan)
         $linkTujuan = '#';
-        $tipe = strtolower(trim($row['tipe']));
-        $id_pinjam = (int)$row['id_pinjam'];
-        
-        if ($tipe === 'peminjaman' && $id_pinjam > 0) {
-            $linkTujuan = 'peminjaman_saya.php#pinjam' . $id_pinjam;
-        } elseif ($tipe === 'pengembalian' && $id_pinjam > 0) {
-            $linkTujuan = 'riwayat.php#kembali' . $id_pinjam;
+
+        // Normalisasi tipe & id_pinjam
+        $tipe      = strtolower(trim($row['tipe'] ?? ''));
+        $id_pinjam = (int)($row['id_pinjam'] ?? 0);
+
+        if ($id_pinjam > 0) {
+
+            // 1) Notifikasi terkait pengajuan / status peminjaman
+            if ($tipe === 'peminjaman') {
+
+                $linkTujuan = 'peminjaman_saya.php#pinjam' . $id_pinjam;
+
+            // 2) Notifikasi terkait pengembalian / riwayat
+            } elseif ($tipe === 'pengembalian' || $tipe === 'riwayat') {
+
+                $linkTujuan = 'riwayat.php#kembali' . $id_pinjam;
+
+            // 3) Notifikasi terkait KOMUNIKASI (kerusakan / tindak lanjut / chat)
+            } else {
+                // Tipe lain apa pun diasumsikan adalah komunikasi
+                // Pastikan file ini ada: peminjam/komunikasi.php
+                $linkTujuan = 'komunikasi_tindaklanjut.php?id_pinjam=' . $id_pinjam;
+
+                // Jika nanti kamu punya id_tindaklanjut di tabel notifikasi:
+                // $linkTujuan = 'komunikasi.php?id_pinjam=' . $id_pinjam . '&id_tl=' . $id_tl;
+            }
         }
 
         $popupNotifs[] = [
@@ -88,8 +108,10 @@ if ($stmt2) {
             'waktu' => format_datetime($row['created_at'])
         ];
     }
+
     $stmt2->close();
 }
+
 
 /* =========================================================
    3) STATISTIK DASHBOARD - PREPARED STATEMENTS
@@ -206,7 +228,7 @@ include '../includes/peminjam/navbar.php';
 <section class="info-section">
     <div class="container">
         <div class="section-header text-center mb-5">
-            <h2 class="section-title" data-aos="fade-up">Tentang E-Fasilitas</h2>
+            <h2 class="section-title" data-aos="fade-up">Tentang Pemfas</h2>
             <p class="section-subtitle" data-aos="fade-up" data-aos-delay="100">
                 Sistem Digital Peminjaman Fasilitas Kampus Politeknik Negeri Bengkalis
             </p>
@@ -214,9 +236,9 @@ include '../includes/peminjam/navbar.php';
 
         <div class="row align-items-center mb-5">
             <div class="col-lg-6" data-aos="fade-right">
-                <h3 class="fw-bold text-primary mb-3">Apa itu E-Fasilitas?</h3>
+                <h3 class="fw-bold text-primary mb-3">Apa itu Pemfas?</h3>
                 <p class="text-muted" style="text-align: justify; line-height: 1.8;">
-                    E-Fasilitas adalah platform digital yang memudahkan civitas akademika 
+                    Pemfas adalah platform digital yang memudahkan civitas akademika 
                     Politeknik Negeri Bengkalis dalam mengajukan peminjaman fasilitas kampus 
                     seperti ruang kelas, laboratorium, aula, kendaraan, dan fasilitas lainnya 
                     secara online. Sistem ini dirancang untuk meningkatkan efisiensi dan 

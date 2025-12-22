@@ -247,8 +247,8 @@ body.sb-sidenav-toggled .hamburger-icon span:nth-child(3) {
 
         <!-- Brand dengan Logo -->
         <a class="navbar-brand-admin d-none d-md-flex" href="dashboard.php">
-            <img src="../assets/img/Logo.png" alt="E-Fasilitas Logo" class="navbar-logo">
-            <span>E-Fasilitas</span>
+            <img src="../assets/img/Logo.png" alt="Pemfas Logo" class="navbar-logo">
+            <span>Pemfas</span>
         </a>
     </div>
 

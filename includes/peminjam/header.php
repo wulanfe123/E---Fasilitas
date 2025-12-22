@@ -4,13 +4,20 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // Validasi session dengan ketat
-$raw_nama = $_SESSION['nama_user'] ?? $_SESSION['nama'] ?? 'Peminjam';
-$nama_user = htmlspecialchars($raw_nama, ENT_QUOTES, 'UTF-8');
-
-if ($id_user === false || $id_user <= 0) {
+if (!isset($_SESSION['id_user'])) {
     header("Location: ../auth/login.php");
     exit;
 }
+
+$id_user = filter_var($_SESSION['id_user'], FILTER_VALIDATE_INT); 
+if ($id_user === false || $id_user <= 0) {                         
+    session_destroy();
+    header("Location: ../auth/login.php");
+    exit;
+}
+
+$raw_nama = $_SESSION['nama_user'] ?? $_SESSION['nama'] ?? 'Peminjam';
+$nama_user = htmlspecialchars($raw_nama, ENT_QUOTES, 'UTF-8');
 
 // Set default page title jika belum ada
 if (!isset($pageTitle)) {
@@ -22,9 +29,9 @@ if (!isset($pageTitle)) {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Sistem Informasi E-Fasilitas - Peminjaman Fasilitas">
-    <meta name="author" content="E-Fasilitas">
-    <title><?= htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') ?> | E-Fasilitas</title>
+    <meta name="description" content="Sistem Informasi Pemfas - Peminjaman Fasilitas">
+    <meta name="author" content="Pemfas">
+    <title><?= htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') ?> | Pemfas</title>
 
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" 

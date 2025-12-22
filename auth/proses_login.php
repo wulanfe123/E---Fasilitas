@@ -89,7 +89,7 @@ if ($isHashed) {
         $loginOK = true;
     }
 } else {
-    // plaintext → migrasi
+
     if (hash_equals($dbPass, $password)) {
         $loginOK = true;
 

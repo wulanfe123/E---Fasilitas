@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Console log for debugging
-    console.log('%c✅ E-Fasilitas Admin Dashboard Loaded', 'color: #16a34a; font-weight: bold; font-size: 14px;');
+    console.log('%c✅ Pemfas Admin Dashboard Loaded', 'color: #16a34a; font-weight: bold; font-size: 14px;');
     console.log('User Role:', '<?= $role ?? "N/A"; ?>');
     console.log('Current Page:', '<?= basename($_SERVER["PHP_SELF"]); ?>');
 });

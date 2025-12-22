@@ -391,7 +391,7 @@ include '../includes/admin/sidebar.php';
                         Kelola Pengguna
                     </h2>
                     <p class="text-muted mb-0 user-header-subtitle">
-                        Manajemen akun pengguna sistem E-Fasilitas (Super Admin, Bagian Umum, &amp; Peminjam).
+                        Manajemen akun pengguna sistem Pemfas (Super Admin, Bagian Umum, &amp; Peminjam).
                     </p>
                 </div>
                 <a href="tambah_pengguna.php" class="btn btn-primary shadow-sm">
@@ -523,7 +523,7 @@ include '../includes/admin/sidebar.php';
     <footer class="footer-admin">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+                <strong>Pemfas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus. | by WFE
             </div>
             <div>
                 Version 1.0

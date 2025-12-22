@@ -1,25 +1,6 @@
 <?php
-/**
- * Helper Notifikasi
- * ----------------------------------------------
- * Dipakai untuk mengirim notifikasi ke tabel `notifikasi`
- * untuk berbagai kejadian:
- * - Pengajuan peminjaman baru
- * - Peminjaman disetujui / ditolak
- * - Pengembalian fasilitas
- * - Pengembalian rusak / ada tindak lanjut
- * - Komplain / kerusakan baru
- * - Update tindak lanjut / klarifikasi
- *
- * Tabel notifikasi:
- * id_notifikasi | id_user | id_pinjam | judul | pesan | tipe | is_read | created_at | dibaca
- */
-
 if (!function_exists('tambah_notif')) {
 
-    /* -------------------------------------------------------
-     * FUNGSI DASAR: TAMBAH 1 NOTIFIKASI
-     * ----------------------------------------------------- */
     function tambah_notif(mysqli $conn, int $id_user, int $id_pinjam, string $judul, string $pesan, string $tipe): void
     {
         $sql = "
@@ -245,10 +226,6 @@ if (!function_exists('tambah_notif')) {
      * 8. FUNGSI TAMBAHAN UNTUK ICON & POPUP (BADGE ANGKA)
      * ===================================================== */
 
-    /**
-     * Hitung notifikasi BELUM DIBACA untuk 1 user.
-     * Dipakai untuk angka di icon lonceng.
-     */
     function notif_hitung_belum_dibaca(mysqli $conn, int $id_user): int
     {
         $sql = "SELECT COUNT(*) AS jml 
@@ -266,10 +243,6 @@ if (!function_exists('tambah_notif')) {
         return (int)$jml;
     }
 
-    /**
-     * Ambil daftar notifikasi milik 1 user (terbaru dulu).
-     * Dipakai untuk isi popup/modal notifikasi.
-     */
     function notif_list_user(mysqli $conn, int $id_user, int $limit = 10): array
     {
         $data = [];

@@ -1,6 +1,7 @@
 <?php
 session_start();
 include '../config/koneksi.php';
+include '../config/notifikasi_helper.php'; // <<< TAMBAHAN: helper notifikasi
 
 /* ==========================
    CEK LOGIN & ROLE
@@ -13,7 +14,7 @@ if (!isset($_SESSION['id_user'])) {
 $id_user_login = (int) $_SESSION['id_user'];
 $role          = $_SESSION['role'] ?? '';
 
-if (!in_array($role, ['bagian_umum', 'super_admin'], true)) {
+if (!in_array($role, ['super_admin', 'bagian_umum'], true)) {
     header("Location: ../auth/unauthorized.php");
     exit;
 }
@@ -37,7 +38,6 @@ if (!in_array($filter_status, ['', 'proses', 'selesai'], true)) {
 
 /* =====================
    NOTIFIKASI UNTUK NAVBAR
-   (tidak pakai input user, tetap query biasa)
    ===================== */
 $notifPeminjaman        = [];
 $notifRusak             = [];
@@ -46,7 +46,7 @@ $jumlahNotifRusak       = 0;
 $jumlahNotif            = 0;
 
 // Peminjaman baru (status usulan)
-$qNotifPeminjaman = mysqli_query($conn, "
+$sqlNotifP = "
     SELECT 
         p.id_pinjam,
         u.nama,
@@ -56,16 +56,19 @@ $qNotifPeminjaman = mysqli_query($conn, "
     WHERE p.status = 'usulan'
     ORDER BY p.id_pinjam DESC
     LIMIT 5
-");
-if ($qNotifPeminjaman) {
-    while ($row = mysqli_fetch_assoc($qNotifPeminjaman)) {
+";
+if ($stmtNP = $conn->prepare($sqlNotifP)) {
+    $stmtNP->execute();
+    $resNP = $stmtNP->get_result();
+    while ($row = $resNP->fetch_assoc()) {
         $notifPeminjaman[] = $row;
     }
+    $stmtNP->close();
 }
 $jumlahNotifPeminjaman = count($notifPeminjaman);
 
 // Pengembalian dengan kondisi rusak
-$qNotifRusak = mysqli_query($conn, "
+$sqlNotifR = "
     SELECT 
         k.id_kembali,
         k.id_pinjam,
@@ -77,11 +80,14 @@ $qNotifRusak = mysqli_query($conn, "
     WHERE k.kondisi = 'rusak'
     ORDER BY k.id_kembali DESC
     LIMIT 5
-");
-if ($qNotifRusak) {
-    while ($row = mysqli_fetch_assoc($qNotifRusak)) {
+";
+if ($stmtNR = $conn->prepare($sqlNotifR)) {
+    $stmtNR->execute();
+    $resNR = $stmtNR->get_result();
+    while ($row = $resNR->fetch_assoc()) {
         $notifRusak[] = $row;
     }
+    $stmtNR->close();
 }
 $jumlahNotifRusak = count($notifRusak);
 
@@ -111,7 +117,7 @@ if (isset($_GET['edit'])) {
 
 /* ==================================
    UPDATE DATA TINDAK LANJUT KERUSAKAN
-   (FORM INPUT -> PREPARED STATEMENT)
+   (FORM INPUT -> PREPARED + NOTIF)
    ================================== */
 if (isset($_POST['update'])) {
     $id_tindaklanjut = (int) ($_POST['id_tindaklanjut'] ?? 0);
@@ -146,12 +152,20 @@ if (isset($_POST['update'])) {
             $stmtUpd->close();
 
             if ($execUpd) {
-                // Ambil id_kembali untuk update pengembalian
-                $id_kembali = 0;
+                // Ambil id_kembali + id_pinjam + id_user peminjam
+                $id_kembali              = 0;
+                $id_pinjam_for_tl        = null;
+                $id_peminjam_for_notif   = null;
+
                 $sqlTL = "
-                    SELECT id_kembali 
-                    FROM tindaklanjut 
-                    WHERE id_tindaklanjut = ?
+                    SELECT 
+                        tl.id_kembali,
+                        pg.id_pinjam,
+                        p.id_user
+                    FROM tindaklanjut tl
+                    JOIN pengembalian pg ON tl.id_kembali = pg.id_kembali
+                    JOIN peminjaman p    ON pg.id_pinjam  = p.id_pinjam
+                    WHERE tl.id_tindaklanjut = ?
                     LIMIT 1
                 ";
                 if ($stmtTL = $conn->prepare($sqlTL)) {
@@ -159,13 +173,16 @@ if (isset($_POST['update'])) {
                     $stmtTL->execute();
                     $resTL = $stmtTL->get_result();
                     if ($rowTL = $resTL->fetch_assoc()) {
-                        $id_kembali = (int) $rowTL['id_kembali'];
+                        $id_kembali            = (int) $rowTL['id_kembali'];
+                        $id_pinjam_for_tl      = (int) $rowTL['id_pinjam'];
+                        $id_peminjam_for_notif = (int) $rowTL['id_user'];
                     }
                     $stmtTL->close();
                 }
 
+                // Jika status selesai → update pengembalian & peminjaman + NOTIF
                 if ($id_kembali > 0 && $status === 'selesai') {
-                    // 1) kondisi pengembalian jadi bagus
+                    // 1) Update pengembalian → kondisi jadi bagus
                     $sqlPeng = "
                         UPDATE pengembalian 
                         SET kondisi = 'bagus'
@@ -177,7 +194,7 @@ if (isset($_POST['update'])) {
                         $stmtPeng->close();
                     }
 
-                    // 2) peminjaman dianggap selesai juga
+                    // 2) peminjaman dianggap selesai juga (jika masih diterima)
                     $sqlPinjam = "
                         UPDATE peminjaman p
                         JOIN pengembalian pg ON p.id_pinjam = pg.id_pinjam
@@ -189,6 +206,26 @@ if (isset($_POST['update'])) {
                         $stmtPinjam->bind_param("i", $id_kembali);
                         $stmtPinjam->execute();
                         $stmtPinjam->close();
+                    }
+
+                    // 3) NOTIFIKASI ke peminjam bahwa tindak lanjut kerusakan selesai
+                    if ($id_peminjam_for_notif !== null && $id_peminjam_for_notif > 0 && $id_pinjam_for_tl !== null) {
+                        $judulNotif = "Tindak Lanjut Kerusakan Selesai";
+                        $pesanNotif = "Tindak lanjut kerusakan pada peminjaman #{$id_pinjam_for_tl} telah dinyatakan SELESAI. "
+                                    . "Fasilitas telah diperbaiki dan peminjaman dinyatakan selesai.";
+                        if ($deskripsi !== '') {
+                            $pesanNotif .= " Rincian tindak lanjut: " . $deskripsi;
+                        }
+
+                        // tipe bisa kamu atur misalnya 'tindaklanjut'
+                        tambah_notif(
+                            $conn,
+                            $id_peminjam_for_notif,
+                            $id_pinjam_for_tl,
+                            $judulNotif,
+                            $pesanNotif,
+                            'tindaklanjut'
+                        );
                     }
                 }
 
@@ -697,7 +734,7 @@ include '../includes/admin/sidebar.php';
                                 Filter yang digunakan sama dengan tab Tindak Lanjut.
                             </div>
 
-                            <!-- Opsional: tampilkan ringkasan filter aktif -->
+                            <!-- Ringkasan filter aktif -->
                             <?php if ($filter_q !== '' || $filter_status !== ''): ?>
                                 <div class="alert alert-light border mb-3">
                                     <strong><i class="fas fa-filter me-2"></i>Filter aktif:</strong>
@@ -786,7 +823,7 @@ include '../includes/admin/sidebar.php';
     <footer class="footer-admin">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+                <strong>Pemfas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus. | by WFE
             </div>
             <div>
                 Version 1.0

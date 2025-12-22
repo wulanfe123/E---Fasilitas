@@ -1,24 +1,9 @@
 <?php
-/**
- * index.php - Halaman Awal E-Fasilitas
- * 
- * SKRIPSI: IMPLEMENTASI PREPARED STATEMENT PADA FORM INPUT 
- *          UNTUK MENCEGAH SQL INJECTION PADA APLIKASI WEB 
- *          PEMINJAMAN FASILITAS KAMPUS
- * 
- * Catatan: File ini tidak memerlukan prepared statement karena
- * tidak ada interaksi database. Security fokus pada session & headers.
- */
-
 session_start();
-
-// Regenerate session ID untuk keamanan
 if (!isset($_SESSION['initiated'])) {
     session_regenerate_id(true);
     $_SESSION['initiated'] = true;
 }
-
-// Jika user SUDAH login, redirect ke dashboard sesuai role dengan validasi ketat
 if (isset($_SESSION['id_user'], $_SESSION['role'])) {
     $role = $_SESSION['role'];
     
@@ -68,11 +53,11 @@ if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Sistem Digital Peminjaman Fasilitas Kampus Politeknik Negeri Bengkalis dengan keamanan Prepared Statement">
-  <meta name="keywords" content="e-fasilitas, peminjaman fasilitas, politeknik bengkalis, kampus">
+  <meta name="keywords" content="Pemfas, peminjaman fasilitas, politeknik bengkalis, kampus">
   <meta name="author" content="Politeknik Negeri Bengkalis">
   <meta name="robots" content="index, follow">
   
-  <title>E-Fasilitas | Politeknik Negeri Bengkalis</title>
+  <title>Pemfas | Politeknik Negeri Bengkalis</title>
 
   <!-- Bootstrap & Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
@@ -412,7 +397,7 @@ if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
   align-items: flex-start;
 }
 
-/* KOLOM KIRI: E-Fasilitas */
+/* KOLOM KIRI: Pemfas */
 .footer-section .footer-about {
   text-align: left !important;
 }
@@ -630,9 +615,9 @@ if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
 <!-- ========== NAVBAR ========== -->
 <nav class="navbar navbar-expand-lg fixed-top">
   <div class="container">
-    <a class="navbar-brand" href="index.php" aria-label="Home E-Fasilitas">
+    <a class="navbar-brand" href="index.php" aria-label="Home Pemfas">
       <img src="assets/img/Logo.png" alt="Logo Politeknik Negeri Bengkalis" style="width:50px;height:50px;border-radius:50%;">
-      <span>E-Fasilitas</span>
+      <span>Pemfas</span>
     </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
@@ -664,7 +649,7 @@ if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
 <!-- ========== HERO SECTION ========== -->
 <section id="home" class="hero">
   <div class="hero-content container">
-    <h1 data-aos="fade-up">Selamat Datang di <span>E-Fasilitas</span></h1>
+    <h1 data-aos="fade-up">Selamat Datang di <span>Pemfas</span></h1>
     <p data-aos="fade-up" data-aos-delay="200">
       Sistem Digital Peminjaman Fasilitas Kampus<br>
       <strong>Politeknik Negeri Bengkalis</strong>
@@ -756,10 +741,10 @@ if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
 <footer class="footer-section">
   <div class="container">
     <div class="row g-4">
-      <!-- KOLOM KIRI: E-Fasilitas -->
+      <!-- KOLOM KIRI: Pemfas -->
       <div class="col-lg-4 col-md-4 col-sm-12">
         <div class="footer-about">
-          <h5 class="footer-title">E-Fasilitas</h5>
+          <h5 class="footer-title">Pemfas</h5>
           <p>Sistem Digital Peminjaman Fasilitas Kampus Politeknik Negeri Bengkalis</p>
           <div class="social-links mt-3">
             <a href="#" aria-label="Facebook" rel="noopener noreferrer"><i class="bi bi-facebook"></i></a>
@@ -777,7 +762,6 @@ if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
           <ul class="list-unstyled">
             <li><a href="index.php"><i class="bi bi-chevron-right me-2"></i>Home</a></li>
             <li><a href="fasilitas.php"><i class="bi bi-chevron-right me-2"></i>Fasilitas</a></li>
-            <li><a href="tentang.php"><i class="bi bi-chevron-right me-2"></i>Tentang</a></li>
             <li><a href="auth/login.php"><i class="bi bi-chevron-right me-2"></i>Login</a></li>
           </ul>
         </div>
@@ -814,7 +798,7 @@ if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
     <hr class="footer-divider">
 
     <div class="footer-bottom text-center">
-      <p class="mb-0">&copy; <?= date('Y') ?>  E-Fasilitas - Polbeng. All Rights Reserved. | by WFE
+      <p class="mb-0">&copy; <?= date('Y') ?>  Pemfas - Polbeng. All Rights Reserved. | by WFE
 </p>
     </div>
   </div>

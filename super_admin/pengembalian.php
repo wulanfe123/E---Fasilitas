@@ -2,6 +2,7 @@
 ob_start();
 session_start();
 include '../config/koneksi.php';
+include '../config/notifikasi_helper.php'; // <<< TAMBAHAN: helper notifikasi
 
 /* =========================================================
    1. CEK LOGIN & ROLE (PREPARED)
@@ -113,7 +114,7 @@ $error   = $_SESSION['error'] ?? '';
 unset($_SESSION['success'], $_SESSION['error']);
 
 /* =========================================================
-   4. UPDATE KONDISI PENGEMBALIAN (PREPARED + VALIDASI)
+   4. UPDATE KONDISI PENGEMBALIAN (PREPARED + VALIDASI + NOTIF)
    ========================================================== */
 if (isset($_POST['update']) && in_array($role, ['super_admin', 'bagian_umum'], true)) {
     $id_kembali_raw = $_POST['id_kembali'] ?? 0;
@@ -135,6 +136,35 @@ if (isset($_POST['update']) && in_array($role, ['super_admin', 'bagian_umum'], t
     } elseif (mb_strlen($catatan) > 500) {
         $_SESSION['error'] = "Catatan terlalu panjang (maksimal 500 karakter).";
     } else {
+
+        // Ambil id_pinjam + id_user peminjam untuk notifikasi
+        $id_pinjam_for_kembali     = null;
+        $id_peminjam_pengembalian  = null;
+
+        $stmtInfo = $conn->prepare("
+            SELECT pg.id_pinjam, p.id_user
+            FROM pengembalian pg
+            JOIN peminjaman p ON pg.id_pinjam = p.id_pinjam
+            WHERE pg.id_kembali = ?
+            LIMIT 1
+        ");
+        if ($stmtInfo) {
+            $stmtInfo->bind_param("i", $id_kembali);
+            $stmtInfo->execute();
+            $resInfo = $stmtInfo->get_result();
+            if ($resInfo && $rowInfo = $resInfo->fetch_assoc()) {
+                $id_pinjam_for_kembali    = (int)$rowInfo['id_pinjam'];
+                $id_peminjam_pengembalian = (int)$rowInfo['id_user'];
+            }
+            $stmtInfo->close();
+        }
+
+        if ($id_pinjam_for_kembali === null || $id_peminjam_pengembalian === null) {
+            $_SESSION['error'] = "Data peminjaman/pengembalian tidak ditemukan.";
+            header("Location: pengembalian.php");
+            exit;
+        }
+
         // Update pengembalian
         $sqlUpd = "
             UPDATE pengembalian 
@@ -149,19 +179,9 @@ if (isset($_POST['update']) && in_array($role, ['super_admin', 'bagian_umum'], t
             $stmtUpd->close();
 
             if ($ok) {
-                // Ambil id_pinjam dari pengembalian ini
-                $id_pinjam_for_kembali = null;
-                $stmtGetPinjam = $conn->prepare("SELECT id_pinjam FROM pengembalian WHERE id_kembali = ? LIMIT 1");
-                $stmtGetPinjam->bind_param("i", $id_kembali);
-                $stmtGetPinjam->execute();
-                $resPinjam = $stmtGetPinjam->get_result();
-                if ($resPinjam && $rp = $resPinjam->fetch_assoc()) {
-                    $id_pinjam_for_kembali = (int)$rp['id_pinjam'];
-                }
-                $stmtGetPinjam->close();
 
                 // HANYA JIKA kondisi = 'bagus' → peminjaman dianggap selesai
-                if ($id_pinjam_for_kembali !== null && $kondisi === 'bagus') {
+                if ($kondisi === 'bagus') {
                     $stmtSelesai = $conn->prepare("
                         UPDATE peminjaman
                         SET status = 'selesai'
@@ -173,6 +193,17 @@ if (isset($_POST['update']) && in_array($role, ['super_admin', 'bagian_umum'], t
                         $stmtSelesai->execute();
                         $stmtSelesai->close();
                     }
+
+                    // NOTIFIKASI ke peminjam: pengembalian diterima dengan kondisi bagus
+                    if ($id_peminjam_pengembalian > 0) {
+                        $judulNotif = "Pengembalian Diterima";
+                        $pesanNotif = "Pengembalian fasilitas untuk peminjaman #{$id_pinjam_for_kembali} telah diperiksa dan dinyatakan dalam kondisi BAGUS. Terima kasih telah menggunakan fasilitas kampus dengan baik.";
+                        if ($catatan !== '') {
+                            $pesanNotif .= " Catatan: " . $catatan;
+                        }
+                        tambah_notif($conn, $id_peminjam_pengembalian, $id_pinjam_for_kembali, $judulNotif, $pesanNotif, 'pengembalian');
+                    }
+
                 }
 
                 // Jika kondisi rusak → buat TINDAK LANJUT otomatis (jika belum ada)
@@ -205,6 +236,16 @@ if (isset($_POST['update']) && in_array($role, ['super_admin', 'bagian_umum'], t
                             $stmtInsTL->execute();
                             $stmtInsTL->close();
                         }
+                    }
+
+                    // NOTIFIKASI ke peminjam: pengembalian rusak → sedang ditindaklanjuti
+                    if ($id_peminjam_pengembalian > 0) {
+                        $judulNotif = "Pengembalian dengan Kondisi Rusak";
+                        $pesanNotif = "Pengembalian fasilitas untuk peminjaman #{$id_pinjam_for_kembali} tercatat dalam kondisi RUSAK dan sedang ditindaklanjuti oleh bagian terkait.";
+                        if ($catatan !== '') {
+                            $pesanNotif .= " Catatan pemeriksaan: " . $catatan;
+                        }
+                        tambah_notif($conn, $id_peminjam_pengembalian, $id_pinjam_for_kembali, $judulNotif, $pesanNotif, 'pengembalian');
                     }
                 }
 
@@ -259,11 +300,11 @@ if (isset($_GET['hapus']) && $role === 'super_admin') {
 }
 
 /* =========================================================
-   6. UPDATE TINDAK LANJUT DARI MODAL (PREPARED + VALIDASI)
+   6. UPDATE TINDAK LANJUT DARI MODAL (PREPARED + VALIDASI + NOTIF)
    ========================================================== */
 if (isset($_POST['tindaklanjut']) && in_array($role, ['super_admin', 'bagian_umum'], true)) {
-    $id_tl_raw = $_POST['id_tindaklanjut'] ?? 0;
-    $id_tindaklanjut = filter_var($id_tl_raw, FILTER_VALIDATE_INT);
+    $id_tl_raw        = $_POST['id_tindaklanjut'] ?? 0;
+    $id_tindaklanjut  = filter_var($id_tl_raw, FILTER_VALIDATE_INT);
 
     $status    = trim($_POST['status'] ?? '');
     $deskripsi = trim($_POST['deskripsi'] ?? '');
@@ -302,15 +343,20 @@ if (isset($_POST['tindaklanjut']) && in_array($role, ['super_admin', 'bagian_umu
                 }
                 $stmtGetK->close();
 
+                // Jika tindak lanjut selesai → update pengembalian & peminjaman + notif
                 if ($id_kembali !== null && $status === 'selesai') {
                     // Ambil catatan lama
                     $catatanLama = '';
-                    $stmtCat = $conn->prepare("SELECT catatan FROM pengembalian WHERE id_kembali = ? LIMIT 1");
+                    $stmtCat = $conn->prepare("SELECT catatan, id_pinjam FROM pengembalian WHERE id_kembali = ? LIMIT 1");
                     $stmtCat->bind_param("i", $id_kembali);
                     $stmtCat->execute();
                     $resCat = $stmtCat->get_result();
+
+                    $id_pinjam_for_kembali = null;
+
                     if ($resCat && $rc = $resCat->fetch_assoc()) {
-                        $catatanLama = $rc['catatan'] ?? '';
+                        $catatanLama          = $rc['catatan'] ?? '';
+                        $id_pinjam_for_kembali = (int)$rc['id_pinjam'];
                     }
                     $stmtCat->close();
 
@@ -334,16 +380,6 @@ if (isset($_POST['tindaklanjut']) && in_array($role, ['super_admin', 'bagian_umu
                     }
 
                     // Setelah perbaikan selesai, peminjaman dianggap selesai juga
-                    $id_pinjam_for_kembali = null;
-                    $stmtPin2 = $conn->prepare("SELECT id_pinjam FROM pengembalian WHERE id_kembali = ? LIMIT 1");
-                    $stmtPin2->bind_param("i", $id_kembali);
-                    $stmtPin2->execute();
-                    $resPin2 = $stmtPin2->get_result();
-                    if ($resPin2 && $rp2 = $resPin2->fetch_assoc()) {
-                        $id_pinjam_for_kembali = (int)$rp2['id_pinjam'];
-                    }
-                    $stmtPin2->close();
-
                     if ($id_pinjam_for_kembali !== null) {
                         $stmtSelesai2 = $conn->prepare("
                             UPDATE peminjaman
@@ -355,6 +391,33 @@ if (isset($_POST['tindaklanjut']) && in_array($role, ['super_admin', 'bagian_umu
                             $stmtSelesai2->bind_param("i", $id_pinjam_for_kembali);
                             $stmtSelesai2->execute();
                             $stmtSelesai2->close();
+                        }
+
+                        // Ambil id_user peminjam → untuk notifikasi
+                        $id_peminjam_notif = null;
+                        $stmtPem = $conn->prepare("
+                            SELECT p.id_user
+                            FROM peminjaman p
+                            WHERE p.id_pinjam = ?
+                            LIMIT 1
+                        ");
+                        if ($stmtPem) {
+                            $stmtPem->bind_param("i", $id_pinjam_for_kembali);
+                            $stmtPem->execute();
+                            $resPem = $stmtPem->get_result();
+                            if ($resPem && $rp = $resPem->fetch_assoc()) {
+                                $id_peminjam_notif = (int)$rp['id_user'];
+                            }
+                            $stmtPem->close();
+                        }
+
+                        if ($id_peminjam_notif !== null && $id_peminjam_notif > 0) {
+                            $judulNotif = "Tindak Lanjut Kerusakan Selesai";
+                            $pesanNotif = "Tindak lanjut kerusakan pada peminjaman #{$id_pinjam_for_kembali} telah dinyatakan SELESAI. Fasilitas telah diperbaiki dan peminjaman dinyatakan selesai.";
+                            if ($deskripsi !== '') {
+                                $pesanNotif .= " Rincian tindak lanjut: " . $deskripsi;
+                            }
+                            tambah_notif($conn, $id_peminjam_notif, $id_pinjam_for_kembali, $judulNotif, $pesanNotif, 'pengembalian');
                         }
                     }
                 }
@@ -758,7 +821,7 @@ include '../includes/admin/sidebar.php';
     <footer class="footer-admin">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+                <strong>Pemfas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus. | by WFE
             </div>
             <div>
                 Version 1.0

@@ -87,6 +87,7 @@ function uploadGambarFasilitas($fieldName, $oldFile = null) {
     $finfo    = finfo_open(FILEINFO_MIME_TYPE);
     $mimeType = finfo_file($finfo, $tmpName);
     finfo_close($finfo);
+
     $allowedMimes = ['image/jpeg', 'image/png'];
     if (!in_array($mimeType, $allowedMimes, true)) {
         $_SESSION['error'] = "File bukan gambar yang valid.";
@@ -147,7 +148,7 @@ switch ($kategori) {
    5. HANDLE CREATE / UPDATE (HANYA SUPER_ADMIN, PREPARED)
    ========================================================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $role === 'super_admin') {
-    $action        = $_POST['action'] ?? '';
+    $action         = $_POST['action'] ?? '';
     $nama_fasilitas = trim($_POST['nama_fasilitas'] ?? '');
     $kategoriPost   = trim($_POST['kategori'] ?? '');
     $lokasi         = trim($_POST['lokasi'] ?? '');
@@ -265,7 +266,7 @@ if (isset($_GET['delete']) && $role === 'super_admin') {
         $oldImg    = $imgRow['gambar'] ?? null;
         $stmtImg->close();
 
-        // Cek foreign key
+        // Cek foreign key (sudah dipakai di daftar_peminjaman_fasilitas?)
         $stmtCek = $conn->prepare("
             SELECT 1 
             FROM daftar_peminjaman_fasilitas 
@@ -364,64 +365,25 @@ $result = null;
 if ($stmtFas) {
     $stmtFas->execute();
     $result = $stmtFas->get_result();
+    $stmtFas->close();
 }
 
 /* =========================================================
-   8. NOTIFIKASI (UNTUK NAVBAR ADMIN) - PREPARED
+   8. STAT USAULAN (UNTUK BADGE SIDEBAR) - PREPARED
    ========================================================== */
-$notifPeminjaman       = [];
-$notifRusak            = [];
-$jumlahNotifPeminjaman = 0;
-$jumlahNotifRusak      = 0;
-$jumlahNotif           = 0;
-
-// Peminjaman baru (usulan)
-$sqlNotifP = "
-    SELECT p.id_pinjam, u.nama, p.tanggal_mulai
-    FROM peminjaman p
-    JOIN users u ON p.id_user = u.id_user
-    WHERE p.status = 'usulan'
-    ORDER BY p.id_pinjam DESC
-    LIMIT 5
-";
-$stmtNotifP = $conn->prepare($sqlNotifP);
-if ($stmtNotifP) {
-    $stmtNotifP->execute();
-    $resNotifP = $stmtNotifP->get_result();
-    while ($row = $resNotifP->fetch_assoc()) {
-        $notifPeminjaman[] = $row;
+$statUsulan = 0;
+$sqlUsulan  = "SELECT COUNT(*) AS total FROM peminjaman WHERE status = 'usulan'";
+if ($stmtUs = $conn->prepare($sqlUsulan)) {
+    $stmtUs->execute();
+    $resUs = $stmtUs->get_result();
+    if ($resUs && $rowUs = $resUs->fetch_assoc()) {
+        $statUsulan = (int)$rowUs['total'];
     }
-    $stmtNotifP->close();
+    $stmtUs->close();
 }
-$jumlahNotifPeminjaman = count($notifPeminjaman);
-
-// Pengembalian rusak
-$sqlNotifR = "
-    SELECT k.id_kembali, k.id_pinjam, u.nama, k.tgl_kembali
-    FROM pengembalian k
-    JOIN peminjaman p ON k.id_pinjam = p.id_pinjam
-    JOIN users u ON p.id_user = u.id_user
-    WHERE k.kondisi = 'rusak'
-    ORDER BY k.id_kembali DESC
-    LIMIT 5
-";
-$stmtNotifR = $conn->prepare($sqlNotifR);
-if ($stmtNotifR) {
-    $stmtNotifR->execute();
-    $resNotifR = $stmtNotifR->get_result();
-    while ($row = $resNotifR->fetch_assoc()) {
-        $notifRusak[] = $row;
-    }
-    $stmtNotifR->close();
-}
-$jumlahNotifRusak = count($notifRusak);
-$jumlahNotif      = $jumlahNotifPeminjaman + $jumlahNotifRusak;
-
-// Variable untuk badge sidebar
-$statUsulan = $jumlahNotifPeminjaman;
 
 /* =========================================================
-   9. TITLE & INCLUDE TEMPLATE ADMIN (TAMPILAN TIDAK DIUBAH)
+   9. TITLE & INCLUDE TEMPLATE ADMIN
    ========================================================== */
 $pageTitle   = 'Daftar Fasilitas';
 $currentPage = 'daftar_fasilitas';
@@ -506,7 +468,7 @@ include '../includes/admin/sidebar.php';
                     <p class="text-muted mb-0 fasilitas-subtitle">
                         Informasi fasilitas kampus yang tersedia untuk peminjaman.
                         <span class="ms-2 badge bg-<?= $badgeClass; ?> badge-kat">
-                            <?= htmlspecialchars($badgeKategori); ?>
+                            <?= htmlspecialchars($badgeKategori, ENT_QUOTES, 'UTF-8'); ?>
                         </span>
                     </p>
                 </div>
@@ -569,7 +531,7 @@ include '../includes/admin/sidebar.php';
             <!-- Tabel Data Fasilitas -->
             <div class="card shadow-sm border-0 mb-4 card-fasilitas">
                 <div class="card-header bg-danger text-white fw-semibold d-flex justify-content-between align-items-center">
-                    <span><i class="fas fa-list me-2"></i> <?= htmlspecialchars($labelKategori); ?></span>
+                    <span><i class="fas fa-list me-2"></i> <?= htmlspecialchars($labelKategori, ENT_QUOTES, 'UTF-8'); ?></span>
                     <span class="small opacity-75">
                         Total: <?= $result ? $result->num_rows : 0; ?> fasilitas
                     </span>
@@ -605,7 +567,7 @@ include '../includes/admin/sidebar.php';
                                     ?>
                                     <tr>
                                         <td class="text-center"><?= $no++; ?></td>
-                                        <td><strong><?= htmlspecialchars($row['nama_fasilitas']); ?></strong></td>
+                                        <td><strong><?= htmlspecialchars($row['nama_fasilitas'], ENT_QUOTES, 'UTF-8'); ?></strong></td>
                                         <td class="text-center text-capitalize">
                                             <?php
                                             $katBadge = 'secondary';
@@ -614,21 +576,21 @@ include '../includes/admin/sidebar.php';
                                             elseif ($row['kategori'] === 'pendukung') $katBadge = 'warning';
                                             ?>
                                             <span class="badge bg-<?= $katBadge; ?>">
-                                                <?= htmlspecialchars($row['kategori']); ?>
+                                                <?= htmlspecialchars($row['kategori'], ENT_QUOTES, 'UTF-8'); ?>
                                             </span>
                                         </td>
-                                        <td><?= htmlspecialchars($row['lokasi']); ?></td>
+                                        <td><?= htmlspecialchars($row['lokasi'], ENT_QUOTES, 'UTF-8'); ?></td>
                                         <td class="text-center">
                                             <img src="<?= $thumbPath; ?>" alt="Gambar" 
                                                  style="max-width:80px; max-height:70px; object-fit:cover; border-radius:8px; cursor:pointer;"
-                                                 onclick="showImageModal('<?= $thumbPath; ?>', '<?= htmlspecialchars($row['nama_fasilitas']); ?>')">
+                                                 onclick="showImageModal('<?= $thumbPath; ?>', '<?= htmlspecialchars($row['nama_fasilitas'], ENT_QUOTES, 'UTF-8'); ?>')">
                                         </td>
                                         <td class="text-center">
                                             <span class="badge bg-<?= ($statusNow === 'tersedia') ? 'success' : 'danger'; ?> px-3 py-2">
                                                 <?= ucfirst(str_replace('_',' ',$statusNow)); ?>
                                             </span>
                                         </td>
-                                        <td><?= nl2br(htmlspecialchars($row['keterangan'] ?? '-')); ?></td>
+                                        <td><?= nl2br(htmlspecialchars($row['keterangan'] ?? '-', ENT_QUOTES, 'UTF-8')); ?></td>
 
                                         <?php if ($role === 'super_admin'): ?>
                                         <td class="text-center">
@@ -638,21 +600,21 @@ include '../includes/admin/sidebar.php';
                                                     class="btn btn-warning btn-sm btn-edit-fas"
                                                     data-bs-toggle="modal"
                                                     data-bs-target="#modalEdit"
-                                                    data-id="<?= $row['id_fasilitas']; ?>"
-                                                    data-nama="<?= htmlspecialchars($row['nama_fasilitas'], ENT_QUOTES); ?>"
-                                                    data-kategori="<?= htmlspecialchars($row['kategori'], ENT_QUOTES); ?>"
-                                                    data-lokasi="<?= htmlspecialchars($row['lokasi'], ENT_QUOTES); ?>"
-                                                    data-ketersediaan="<?= htmlspecialchars($row['ketersediaan'], ENT_QUOTES); ?>"
-                                                    data-ket="<?= htmlspecialchars($row['keterangan'] ?? '', ENT_QUOTES); ?>"
-                                                    data-gambar="<?= htmlspecialchars($row['gambar'] ?? '', ENT_QUOTES); ?>"
+                                                    data-id="<?= (int)$row['id_fasilitas']; ?>"
+                                                    data-nama="<?= htmlspecialchars($row['nama_fasilitas'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    data-kategori="<?= htmlspecialchars($row['kategori'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    data-lokasi="<?= htmlspecialchars($row['lokasi'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    data-ketersediaan="<?= htmlspecialchars($row['ketersediaan'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                    data-ket="<?= htmlspecialchars($row['keterangan'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                                    data-gambar="<?= htmlspecialchars($row['gambar'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
                                                     title="Edit Fasilitas"
                                                 >
                                                     <i class="fas fa-edit"></i>
                                                 </button>
 
-                                                <a href="daftar_fasilitas.php?delete=<?= $row['id_fasilitas']; ?>&kategori=<?= urlencode($kategori); ?>"
+                                                <a href="daftar_fasilitas.php?delete=<?= (int)$row['id_fasilitas']; ?>&kategori=<?= urlencode($kategori); ?>"
                                                    class="btn btn-danger btn-sm btn-delete-fas"
-                                                   onclick="return confirm('Yakin ingin menghapus fasilitas <?= htmlspecialchars($row['nama_fasilitas']); ?>?');"
+                                                   onclick="return confirm('Yakin ingin menghapus fasilitas <?= htmlspecialchars($row['nama_fasilitas'], ENT_QUOTES, 'UTF-8'); ?>?');"
                                                    title="Hapus Fasilitas">
                                                     <i class="fas fa-trash-alt"></i>
                                                 </a>
@@ -682,7 +644,7 @@ include '../includes/admin/sidebar.php';
     <footer class="footer-admin">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+                <strong>Pemfas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
             </div>
             <div>
                 Version 1.0
@@ -736,7 +698,7 @@ include '../includes/admin/sidebar.php';
           </select>
           <small class="text-muted">
             <i class="fas fa-info-circle me-1"></i>
-            Ketersediaan aktual akan otomatis <strong>Tidak Tersedia</strong> jika fasilitas sedang dipinjam (status Diterima & tanggal aktif).
+            Ketersediaan aktual akan otomatis <strong>Tidak Tersedia</strong> jika fasilitas sedang dipinjam (status Diterima &amp; tanggal aktif).
           </small>
         </div>
 
@@ -810,7 +772,7 @@ include '../includes/admin/sidebar.php';
           </select>
           <small class="text-muted">
             <i class="fas fa-info-circle me-1"></i>
-            Ketersediaan aktual tetap dihitung otomatis dari data peminjaman (status Diterima & tanggal aktif).
+            Ketersediaan aktual tetap dihitung otomatis dari data peminjaman (status Diterima &amp; tanggal aktif).
           </small>
         </div>
 

@@ -1,6 +1,7 @@
 <?php
 session_start();
 include '../config/koneksi.php';
+include '../config/notifikasi_helper.php';
 
 /* ========================
    CEK LOGIN (PREPARED)
@@ -101,15 +102,14 @@ $jumlahNotif = $jumlahNotifPeminjaman + $jumlahNotifRusak;
 // Variable untuk badge sidebar
 $statUsulan = $jumlahNotifPeminjaman;
 
-/* ========================
-   AMBIL FLASH MESSAGE
-   ======================== */
+/* ======================== AMBIL FLASH MESSAGE ======================== */
 $success = $_SESSION['success'] ?? '';
 $error   = $_SESSION['error'] ?? '';
 unset($_SESSION['success'], $_SESSION['error']);
 
 /* =======================================================
    Aksi: TOLAK (POST) -> dengan alasan_penolakan (PREPARED)
+   + KIRIM NOTIFIKASI KE PEMINJAM
    ======================================================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['aksi'] === 'tolak') {
     $id_pinjam_raw    = $_POST['id_pinjam'] ?? 0;
@@ -119,6 +119,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
     // Validasi ID
     if ($id_pinjam === false || $id_pinjam <= 0) {
         $_SESSION['error'] = "ID peminjaman tidak valid.";
+        header("Location: peminjaman.php");
+        exit;
+    }
+
+    // Ambil info peminjam dari peminjaman (untuk notifikasi)
+    $id_peminjam_tolak = 0;
+    $nama_peminjam_tolak = '';
+    $stmtInfo = $conn->prepare("
+        SELECT p.id_user, u.nama 
+        FROM peminjaman p
+        JOIN users u ON p.id_user = u.id_user
+        WHERE p.id_pinjam = ?
+        LIMIT 1
+    ");
+    if ($stmtInfo) {
+        $stmtInfo->bind_param("i", $id_pinjam);
+        $stmtInfo->execute();
+        $resInfo = $stmtInfo->get_result();
+        if ($resInfo && $rowInfo = $resInfo->fetch_assoc()) {
+            $id_peminjam_tolak  = (int)$rowInfo['id_user'];
+            $nama_peminjam_tolak = $rowInfo['nama'];
+        }
+        $stmtInfo->close();
+    }
+
+    if ($id_peminjam_tolak <= 0) {
+        $_SESSION['error'] = "Data peminjaman tidak ditemukan.";
         header("Location: peminjaman.php");
         exit;
     }
@@ -147,6 +174,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
         $stmtTolak->bind_param("si", $alasan_penolakan, $id_pinjam);
         if ($stmtTolak->execute()) {
             $_SESSION['success'] = "Peminjaman #$id_pinjam berhasil ditolak dengan alasan.";
+
+            // NOTIFIKASI ke peminjam
+            $judulNotif = "Peminjaman Ditolak";
+            $pesanNotif = "Pengajuan peminjaman fasilitas Anda dengan ID #$id_pinjam ditolak. Alasan: " . $alasan_penolakan;
+            tambah_notif($conn, $id_peminjam_tolak, $id_pinjam, $judulNotif, $pesanNotif, 'peminjaman');
         } else {
             $_SESSION['error'] = "Gagal menolak peminjaman.";
         }
@@ -160,13 +192,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi']) && $_POST['ak
 }
 
 /* =======================================================
-   Aksi: ubah status / hapus (GET, PREPARED)
+   Aksi: ubah status / hapus (GET, PREPARED) + NOTIFIKASI
    ======================================================== */
 if (isset($_GET['aksi'], $_GET['id'])) {
     $aksi_raw = $_GET['aksi'];
     $id_raw   = $_GET['id'];
 
-    $aksi     = filter_var($aksi_raw, FILTER_SANITIZE_STRING);
+    $aksi      = filter_var($aksi_raw, FILTER_SANITIZE_STRING);
     $id_pinjam = filter_var($id_raw, FILTER_VALIDATE_INT);
 
     $allowedAksi = ['terima', 'selesai', 'hapus'];
@@ -198,44 +230,46 @@ if (isset($_GET['aksi'], $_GET['id'])) {
     $stmtCek->close();
 
     if ($data) {
-        $new_status = null;
-
+        $new_status       = null;
+        $id_peminjam      = (int)$data['id_user'];
+        $nama_peminjam    = $data['nama'];
+        $status_sekarang  = $data['status'];
         if ($aksi === 'hapus') {
-            // Hapus secara cascade dengan prepared
-            // 1) Hapus data pengembalian
-            $stmtDelK = $conn->prepare("DELETE FROM pengembalian WHERE id_pinjam = ?");
-            if ($stmtDelK) {
-                $stmtDelK->bind_param("i", $id_pinjam);
-                $stmtDelK->execute();
-                $stmtDelK->close();
-            }
+    // Hapus secara cascade dengan prepared
+    // 1) Hapus data pengembalian
+    $stmtDelK = $conn->prepare("DELETE FROM pengembalian WHERE id_pinjam = ?");
+    if ($stmtDelK) {
+        $stmtDelK->bind_param("i", $id_pinjam);
+        $stmtDelK->execute();
+        $stmtDelK->close();
+    }
 
-            // 2) Hapus detail peminjaman fasilitas
-            $stmtDelDF = $conn->prepare("DELETE FROM daftar_peminjaman_fasilitas WHERE id_pinjam = ?");
-            if ($stmtDelDF) {
-                $stmtDelDF->bind_param("i", $id_pinjam);
-                $stmtDelDF->execute();
-                $stmtDelDF->close();
-            }
+    // 2) Hapus detail peminjaman fasilitas
+    $stmtDelDF = $conn->prepare("DELETE FROM daftar_peminjaman_fasilitas WHERE id_pinjam = ?");
+    if ($stmtDelDF) {
+        $stmtDelDF->bind_param("i", $id_pinjam);
+        $stmtDelDF->execute();
+        $stmtDelDF->close();
+    }
 
-            // 3) Hapus data utama peminjaman
-            $stmtDelP = $conn->prepare("DELETE FROM peminjaman WHERE id_pinjam = ?");
-            if ($stmtDelP) {
-                $stmtDelP->bind_param("i", $id_pinjam);
-                if ($stmtDelP->execute()) {
-                    $_SESSION['success'] = "Peminjaman #$id_pinjam beserta data pengembalian dan detail fasilitasnya berhasil dihapus.";
-                } else {
-                    $_SESSION['error'] = "Gagal menghapus peminjaman.";
-                }
-                $stmtDelP->close();
-            } else {
-                $_SESSION['error'] = "Gagal menyiapkan query hapus peminjaman.";
-            }
-
-            header("Location: peminjaman.php");
-            exit;
+    // 3) Hapus data utama peminjaman
+    $stmtDelP = $conn->prepare("DELETE FROM peminjaman WHERE id_pinjam = ?");
+    if ($stmtDelP) {
+        $stmtDelP->bind_param("i", $id_pinjam);
+        if ($stmtDelP->execute()) {
+            $_SESSION['success'] = "Peminjaman #$id_pinjam beserta data pengembalian dan detail fasilitasnya berhasil dihapus.";
+            // Tidak ada notifikasi ke peminjam saat dihapus
+        } else {
+            $_SESSION['error'] = "Gagal menghapus peminjaman.";
         }
+        $stmtDelP->close();
+    } else {
+        $_SESSION['error'] = "Gagal menyiapkan query hapus peminjaman.";
+    }
 
+    header("Location: peminjaman.php");
+    exit;
+}
         // Jika bukan hapus → tentukan status baru
         switch ($aksi) {
             case 'terima':
@@ -252,6 +286,19 @@ if (isset($_GET['aksi'], $_GET['id'])) {
                 $stmtUpd->bind_param("si", $new_status, $id_pinjam);
                 if ($stmtUpd->execute()) {
                     $_SESSION['success'] = "Status peminjaman #$id_pinjam diubah menjadi '$new_status'.";
+
+                    // NOTIFIKASI SESUAI STATUS BARU
+                    if ($id_peminjam > 0) {
+                        if ($new_status === 'diterima') {
+                            $judulNotif = "Peminjaman Diterima";
+                            $pesanNotif = "Pengajuan peminjaman fasilitas Anda dengan ID #$id_pinjam telah DITERIMA oleh Admin.";
+                            tambah_notif($conn, $id_peminjam, $id_pinjam, $judulNotif, $pesanNotif, 'peminjaman');
+                        } elseif ($new_status === 'selesai') {
+                            $judulNotif = "Peminjaman Selesai";
+                            $pesanNotif = "Peminjaman fasilitas dengan ID #$id_pinjam telah dinyatakan SELESAI oleh Admin.";
+                            tambah_notif($conn, $id_peminjam, $id_pinjam, $judulNotif, $pesanNotif, 'peminjaman');
+                        }
+                    }
                 } else {
                     $_SESSION['error'] = "Gagal mengubah status peminjaman.";
                 }
@@ -624,7 +671,7 @@ include '../includes/admin/sidebar.php';
     <footer class="footer-admin">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+                <strong>Pemfas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus. | by WFE
             </div>
             <div>
                 Version 1.0

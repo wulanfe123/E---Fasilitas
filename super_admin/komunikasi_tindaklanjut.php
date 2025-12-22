@@ -214,18 +214,14 @@ include '../includes/admin/sidebar.php';
 ?>
 
 <style>
-/* Bungkus seluruh area chat */
 .chat-wrapper {
     margin-top: 0;
 }
-
-/* Kolom utama chat supaya sejajar dengan judul, tapi tetap lebar */
-/* Kolom utama chat: agak dekat ke sidebar, tapi tidak mepet */
 .chat-column {
     width: 100%;
-    max-width: 1200px;      /* boleh disesuaikan */
-    margin-left: 0.75rem;   /* jarak dari sidebar */
-    margin-right: 0;        /* lebih rapat ke kanan */
+    max-width: 1200px;      
+    margin-left: 0.75rem;   
+    margin-right: 0;        
 }
 
 @media (max-width: 991.98px) {
@@ -237,7 +233,6 @@ include '../includes/admin/sidebar.php';
     }
 }
 
-/* Box chat */
 .chat-box {
     background: #f9fafb;
     border-radius: 16px;
@@ -247,45 +242,36 @@ include '../includes/admin/sidebar.php';
     border: 1px solid #e5e7eb;
 }
 
-/* Item setiap chat */
 .chat-item {
     margin-bottom: 14px;
     display: flex;
 }
-
-/* Badge kecil di nama pengirim */
 .chat-badge {
     font-size: .72rem;
     padding: 2px 8px;
     border-radius: 999px;
 }
-
-/* Bubble chat */
 .chat-bubble {
     border-radius: 14px;
     padding: 10px 14px;
     max-width: 80%;
     font-size: .9rem;
 }
-
-/* Posisi kiri (peminjam) */
 .chat-left {
     justify-content: flex-start;
 }
 .chat-left .chat-bubble {
     background: #ffffff;
     border: 1px solid #e5e7eb;
-    margin-right: 60px;   /* supaya agak ke tengah */
+    margin-right: 60px;   
 }
-
-/* Posisi kanan (admin/super admin) */
 .chat-right {
     justify-content: flex-end;
 }
 .chat-right .chat-bubble {
     background: #dc3545;
     color: #fff;
-    margin-left: 60px;    /* supaya agak ke tengah */
+    margin-left: 60px;    
 }
 
 /* Meta waktu */
@@ -432,7 +418,7 @@ include '../includes/admin/sidebar.php';
     <footer class="footer-admin">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <strong>E-Fasilitas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus
+                <strong>Pemfas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus. | by WFE
             </div>
             <div>
                 Version 1.0

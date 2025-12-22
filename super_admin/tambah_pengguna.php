@@ -3,7 +3,6 @@ session_start();
 include '../config/koneksi.php';
 include '../config/notifikasi_helper.php';
 
-
 // ==== CEK LOGIN & ROLE SUPER ADMIN ====
 if (!isset($_SESSION['id_user'])) {
     header("Location: ../auth/login.php");
@@ -33,23 +32,25 @@ $error   = '';
 
 // ==== OPSIONAL: DAFTAR UNIT (SAMA SEPERTI DI KELOLA_PENGGUNA) ====
 $unitOptions = [];
-$cekUnitTable = $conn->query("SHOW TABLES LIKE 'unit'");
-if ($cekUnitTable && $cekUnitTable->num_rows > 0) {
-    $qUnit = $conn->query("SELECT id_unit, nama_unit FROM unit ORDER BY nama_unit ASC");
-    while ($u = $qUnit->fetch_assoc()) {
-        $unitOptions[(int)$u['id_unit']] = $u['nama_unit'];
+if ($cekUnitTable = $conn->query("SHOW TABLES LIKE 'unit'")) {
+    if ($cekUnitTable->num_rows > 0) {
+        if ($qUnit = $conn->query("SELECT id_unit, nama_unit FROM unit ORDER BY nama_unit ASC")) {
+            while ($u = $qUnit->fetch_assoc()) {
+                $unitOptions[(int)$u['id_unit']] = $u['nama_unit'];
+            }
+        }
     }
 }
 
 // ==== PROSES SIMPAN PENGGUNA BARU ====
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $nama     = trim($_POST['nama'] ?? '');
-    $username = trim($_POST['username'] ?? '');
-    $email    = trim($_POST['email'] ?? '');
-    $role_u   = trim($_POST['role'] ?? '');
+    $nama         = trim($_POST['nama'] ?? '');
+    $username     = trim($_POST['username'] ?? '');
+    $email        = trim($_POST['email'] ?? '');
+    $role_u       = trim($_POST['role'] ?? '');
     $id_unit_post = isset($_POST['id_unit']) ? (int) $_POST['id_unit'] : 0;
-    $password = $_POST['password'] ?? '';
-    $password2= $_POST['password_confirmation'] ?? '';
+    $password     = $_POST['password'] ?? '';
+    $password2    = $_POST['password_confirmation'] ?? '';
 
     // ---- VALIDASI DASAR ----
     if ($nama === '' || $username === '' || $role_u === '' || $password === '' || $password2 === '') {
@@ -59,9 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif (strlen($username) < 4 || strlen($username) > 30) {
         $error = "Username harus 4–30 karakter.";
     }
-    // username HANYA huruf (tanpa angka/spasi/simbol)
-    elseif (!preg_match('/^[A-Za-z]+$/', $username)) {
-        $error = "Username hanya boleh berisi huruf (tanpa angka, spasi, atau simbol).";
+    // username huruf, angka, underscore
+    elseif (!preg_match('/^[A-Za-z0-9_]+$/', $username)) {
+        $error = "Username hanya boleh berisi huruf, angka, dan underscore (_).";
     }
     // email harus format valid (kalau diisi)
     elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -105,7 +106,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($error === '') {
         $emailVal  = $email !== '' ? $email : null;
         $idUnitVal = ($id_unit_post > 0 && isset($unitOptions[$id_unit_post]))
-                     ? $id_unit_post : null;
+                     ? $id_unit_post
+                     : 0; // 0 = tanpa unit
+
         $password_hash = password_hash($password, PASSWORD_DEFAULT);
 
         try {
@@ -114,18 +117,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 VALUES (?, ?, ?, ?, ?, ?, NOW())
             ";
             if ($stmtIns = $conn->prepare($sqlIns)) {
-                $stmtIns->bind_param("ssssis",
-              $nama,
-             $username,
-                    $emailVal,    
+                $stmtIns->bind_param(
+                    "ssssis",
+                    $nama,
+                    $username,
+                    $emailVal,
                     $role_u,
-                    $idUnitVal,   
+                    $idUnitVal,
                     $password_hash
                 );
-                        $stmtIns->execute();
+                $stmtIns->execute();
 
                 if ($stmtIns->affected_rows > 0) {
-                    // kirim pesan sukses via session dan kembali ke kelola_pengguna
                     $_SESSION['success'] = "Pengguna baru berhasil ditambahkan.";
                     header("Location: kelola_pengguna.php");
                     exit;
@@ -143,104 +146,187 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $pageTitle = "Tambah Pengguna";
+
 include '../includes/admin/header.php';
-include '../includes/admin/navbar.php';
 include '../includes/admin/sidebar.php';
 ?>
 
-<div class="container-fluid px-4">
-    <div class="d-flex justify-content-between align-items-center mb-4 mt-3">
-        <div>
-            <h2 class="fw-bold text-primary mb-1">Tambah Pengguna</h2>
-            <p class="text-muted mb-0">Form untuk menambahkan akun pengguna baru.</p>
+<div id="layoutSidenav_content">
+
+    <?php include '../includes/admin/navbar.php'; ?>
+
+    <main>
+        <div class="container-fluid px-4">
+
+            <style>
+                .page-title-main {
+                    font-size: 1.5rem;
+                }
+                .page-subtitle-main {
+                    font-size: 0.95rem;
+                }
+                .card-form-user {
+                    max-width: 900px;
+                    margin: 0 auto 2rem auto;
+                }
+            </style>
+
+            <!-- Header Halaman -->
+            <div class="d-flex justify-content-between align-items-center mb-4 mt-3">
+                <div>
+                    <h2 class="fw-bold text-primary mb-1 page-title-main">
+                        <i class="fas fa-user-plus me-2"></i> Tambah Pengguna
+                    </h2>
+                    <p class="text-muted mb-0 page-subtitle-main">
+                        Form untuk menambahkan akun pengguna baru ke sistem Pemfas.
+                    </p>
+                </div>
+                <a href="kelola_pengguna.php" class="btn btn-outline-secondary shadow-sm">
+                    <i class="fas fa-arrow-left me-1"></i> Kembali
+                </a>
+            </div>
+
+            <hr class="mt-0 mb-4" style="border-top: 2px solid #0f172a; opacity:.2;">
+
+            <!-- Alert Error -->
+            <?php if ($error): ?>
+                <div class="alert alert-danger alert-dismissible fade show">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <?= htmlspecialchars($error); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <!-- Card Form -->
+            <div class="card shadow-sm border-0 card-form-user">
+                <div class="card-header bg-primary text-white d-flex align-items-center">
+                    <i class="fas fa-user-cog me-2"></i>
+                    <span class="fw-semibold">Form Tambah Pengguna</span>
+                </div>
+                <div class="card-body">
+                    <form method="POST" autocomplete="off">
+                        <!-- Row 1: Nama & Username -->
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Nama Lengkap <span class="text-danger">*</span></label>
+                                <input type="text"
+                                       name="nama"
+                                       class="form-control"
+                                       required
+                                       value="<?= htmlspecialchars($_POST['nama'] ?? ''); ?>"
+                                       placeholder="Masukkan nama lengkap">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Username <span class="text-danger">*</span></label>
+                                <input type="text"
+                                       name="username"
+                                       class="form-control"
+                                       required
+                                       value="<?= htmlspecialchars($_POST['username'] ?? ''); ?>"
+                                       placeholder="Username login">
+                                <div class="form-text">
+                                    Hanya huruf, angka, dan underscore (_), 4–30 karakter.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Row 2: Email & Role -->
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Email</label>
+                                <input type="email"
+                                       name="email"
+                                       class="form-control"
+                                       value="<?= htmlspecialchars($_POST['email'] ?? ''); ?>"
+                                       placeholder="Alamat email (opsional)">
+                                <div class="form-text">Boleh dikosongkan.</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Role <span class="text-danger">*</span></label>
+                                <select name="role" class="form-select" required>
+                                    <option value="">-- Pilih Role --</option>
+                                    <option value="super_admin" <?= (($_POST['role'] ?? '') === 'super_admin') ? 'selected' : ''; ?>>
+                                        Super Admin
+                                    </option>
+                                    <option value="bagian_umum" <?= (($_POST['role'] ?? '') === 'bagian_umum') ? 'selected' : ''; ?>>
+                                        Bagian Umum
+                                    </option>
+                                    <option value="peminjam" <?= (($_POST['role'] ?? '') === 'peminjam') ? 'selected' : ''; ?>>
+                                        Peminjam
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Unit -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Unit</label>
+                            <?php if (!empty($unitOptions)): ?>
+                                <select name="id_unit" class="form-select">
+                                    <option value="0">-- Tanpa Unit --</option>
+                                    <?php foreach ($unitOptions as $id_unit => $nama_unit): ?>
+                                        <option value="<?= $id_unit; ?>"
+                                            <?= ((int)($_POST['id_unit'] ?? 0) === $id_unit) ? 'selected' : ''; ?>>
+                                            <?= htmlspecialchars($nama_unit); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">Pilih unit jika pengguna terkait dengan unit tertentu.</div>
+                            <?php else: ?>
+                                <input type="number"
+                                       name="id_unit"
+                                       class="form-control"
+                                       value="<?= htmlspecialchars($_POST['id_unit'] ?? ''); ?>"
+                                       placeholder="ID Unit (opsional)">
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- Row 3: Password & Konfirmasi -->
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Password <span class="text-danger">*</span></label>
+                                <input type="password"
+                                       name="password"
+                                       class="form-control"
+                                       required
+                                       placeholder="Password untuk login">
+                                <div class="form-text">
+                                    Minimal 8 karakter, kombinasi huruf besar, huruf kecil, angka, dan simbol.
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Konfirmasi Password <span class="text-danger">*</span></label>
+                                <input type="password"
+                                       name="password_confirmation"
+                                       class="form-control"
+                                       required
+                                       placeholder="Ulangi password">
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end mt-2">
+                            <button type="submit" class="btn btn-primary px-4">
+                                <i class="fas fa-save me-1"></i> Simpan Pengguna
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
         </div>
-        <a href="kelola_pengguna.php" class="btn btn-outline-secondary">
-            &laquo; Kembali
-        </a>
-    </div>
+    </main>
 
-    <?php if ($error): ?>
-        <div class="alert alert-danger alert-dismissible fade show">
-            <?= htmlspecialchars($error); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <footer class="footer-admin">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <strong>Pemfas</strong> &copy; <?= date('Y'); ?> - Sistem Peminjaman Fasilitas Kampus. | by WFE
+            </div>
+            <div>
+                Version 1.0
+            </div>
         </div>
-    <?php endif; ?>
+    </footer>
 
-    <div class="card shadow-sm border-0">
-        <div class="card-header bg-primary text-white">
-            <i class="fas fa-user-plus me-2"></i> Form Tambah Pengguna
-        </div>
-        <div class="card-body">
-            <form method="POST" autocomplete="off">
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Nama Lengkap</label>
-                    <input type="text" name="nama" class="form-control" required
-                           value="<?= htmlspecialchars($_POST['nama'] ?? ''); ?>">
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Username</label>
-                    <input type="text" name="username" class="form-control" required
-                           value="<?= htmlspecialchars($_POST['username'] ?? ''); ?>">
-                    <div class="form-text">Hanya huruf, angka, dan _ , 4–30 karakter.</div>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Email</label>
-                    <input type="email" name="email" class="form-control"
-                           value="<?= htmlspecialchars($_POST['email'] ?? ''); ?>">
-                    <div class="form-text">Boleh dikosongkan.</div>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Role</label>
-                    <select name="role" class="form-select" required>
-                        <option value="">-- Pilih Role --</option>
-                        <option value="super_admin" <?= (($_POST['role'] ?? '') === 'super_admin') ? 'selected' : ''; ?>>Super Admin</option>
-                        <option value="bagian_umum" <?= (($_POST['role'] ?? '') === 'bagian_umum') ? 'selected' : ''; ?>>Bagian Umum</option>
-                        <option value="peminjam" <?= (($_POST['role'] ?? '') === 'peminjam') ? 'selected' : ''; ?>>Peminjam</option>
-                    </select>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Unit</label>
-                    <?php if (!empty($unitOptions)): ?>
-                        <select name="id_unit" class="form-select">
-                            <option value="0">-- Tanpa Unit --</option>
-                            <?php foreach ($unitOptions as $id_unit => $nama_unit): ?>
-                                <option value="<?= $id_unit; ?>"
-                                  <?= ((int)($_POST['id_unit'] ?? 0) === $id_unit) ? 'selected' : ''; ?>>
-                                    <?= htmlspecialchars($nama_unit); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    <?php else: ?>
-                        <input type="number" name="id_unit" class="form-control"
-                               value="<?= htmlspecialchars($_POST['id_unit'] ?? ''); ?>"
-                               placeholder="ID Unit (opsional)">
-                    <?php endif; ?>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label fw-semibold">Password</label>
-                        <input type="password" name="password" class="form-control" required>
-                        <div class="form-text">Minimal 8 karakter kombinasi.</div>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label fw-semibold">Konfirmasi Password</label>
-                        <input type="password" name="password_confirmation" class="form-control" required>
-                    </div>
-                </div>
-
-                <div class="text-end">
-                    <button type="submit" class="btn btn-primary">
-                        Simpan Pengguna
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
 </div>
 
 <?php include '../includes/admin/footer.php'; ?>

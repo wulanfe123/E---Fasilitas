@@ -19,7 +19,7 @@ if ($id_user === false || $id_user <= 0) {
 $nama_user = htmlspecialchars($_SESSION['nama'] ?? 'Peminjam', ENT_QUOTES, 'UTF-8');
 
 // Set page variables
-$pageTitle = 'Riwayat Peminjaman';
+$pageTitle   = 'Riwayat Peminjaman';
 $currentPage = 'riwayat';
 
 /* ============================
@@ -42,9 +42,6 @@ if ($stmtNotif) {
 
 /* ============================
    2) Ambil riwayat peminjaman (PREPARED)
-      - status 'selesai'  => sudah ada pengembalian
-      - status 'ditolak'  => pengajuan ditolak
-      Sekaligus ambil pengembalian & tindak lanjut TERAKHIR jika ada
    ============================ */
 $sqlRiwayat = "
     SELECT 
@@ -261,12 +258,8 @@ include '../includes/peminjam/navbar.php';
     }
 
     @keyframes pulse-warning {
-        0%, 100% {
-            opacity: 1;
-        }
-        50% {
-            opacity: 0.8;
-        }
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.8; }
     }
 
     /* ======== BADGE KONDISI & TINDAK LANJUT ======== */
@@ -393,13 +386,8 @@ include '../includes/peminjam/navbar.php';
 
     /* ======== RESPONSIVE ======== */
     @media (max-width: 768px) {
-        .hero-section h2 {
-            font-size: 2rem;
-        }
-
-        .hero-section p {
-            font-size: 1rem;
-        }
+        .hero-section h2 { font-size: 2rem; }
+        .hero-section p  { font-size: 1rem; }
 
         .hero-badge {
             font-size: 0.8rem;
@@ -473,208 +461,192 @@ include '../includes/peminjam/navbar.php';
 
 <div class="container mb-5">
 
-    <?php if ($resultRiwayat && $resultRiwayat->num_rows > 0): ?>
-        <div class="row justify-content-center">
-            <div class="col-12" data-aos="fade-up">
-                <div class="riwayat-card">
-                    <div class="riwayat-table-wrapper">
-                        <div class="riwayat-table-responsive">
-                            <table class="riwayat-table text-center align-middle">
-                                <thead>
-                                    <tr>
-                                        <th>No</th>
-                                        <th>Fasilitas</th>
-                                        <th>Tanggal Pinjam</th>
-                                        <th>Tanggal Kembali</th>
-                                        <th>Status</th>
-                                        <th>Kondisi & Tindak Lanjut</th>
-                                        <th>Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php 
-                                    $no = 1;
-                                    while ($data = $resultRiwayat->fetch_assoc()):
-                                        // Sanitasi semua output
-                                        $id_pinjam = (int)$data['id_pinjam'];
-                                        $statusPinjam = strtolower(htmlspecialchars($data['status_pinjam'], ENT_QUOTES, 'UTF-8'));
-                                        $fasilitasList = htmlspecialchars($data['fasilitas_list'] ?? '-', ENT_QUOTES, 'UTF-8');
-                                        
-                                        // Format tanggal
-                                        $tglMulai = !empty($data['tanggal_mulai']) 
-                                            ? date('d M Y', strtotime($data['tanggal_mulai'])) 
-                                            : '-';
-                                        $tglKembali = !empty($data['tgl_kembali'])
-                                            ? date('d M Y', strtotime($data['tgl_kembali']))
-                                            : '-';
+<?php if ($resultRiwayat && $resultRiwayat->num_rows > 0): ?>
+    <div class="row justify-content-center">
+        <div class="col-12" data-aos="fade-up">
+            <div class="riwayat-card">
+                <div class="riwayat-table-wrapper">
+                    <div class="riwayat-table-responsive">
+                        <table class="riwayat-table text-center align-middle">
+                            <thead>
+                                <tr>
+                                    <th>No</th>
+                                    <th>Fasilitas</th>
+                                    <th>Tanggal Pinjam</th>
+                                    <th>Tanggal Kembali</th>
+                                    <th>Status</th>
+                                    <th>Kondisi & Tindak Lanjut</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php 
+                                $no = 1;
+                                while ($data = $resultRiwayat->fetch_assoc()):
+                                    $id_pinjam = (int)$data['id_pinjam'];
+                                    $statusPinjam = strtolower(htmlspecialchars($data['status_pinjam'], ENT_QUOTES, 'UTF-8'));
+                                    $fasilitasList = htmlspecialchars($data['fasilitas_list'] ?? '-', ENT_QUOTES, 'UTF-8');
+                                    
+                                    $tglMulai = !empty($data['tanggal_mulai']) 
+                                        ? date('d M Y', strtotime($data['tanggal_mulai'])) 
+                                        : '-';
+                                    $tglKembali = !empty($data['tgl_kembali'])
+                                        ? date('d M Y', strtotime($data['tgl_kembali']))
+                                        : '-';
 
-                                        // Kondisi pengembalian
-                                        $kondisi = strtolower($data['kondisi'] ?? '');
-                                        
-                                        // Tindak lanjut terakhir
-                                        $id_tindaklanjut = !empty($data['id_tindaklanjut']) ? (int)$data['id_tindaklanjut'] : 0;
-                                        $statusTLRaw = strtolower($data['status_tindaklanjut'] ?? '');
+                                    $kondisi = strtolower($data['kondisi'] ?? '');
+                                    
+                                    $id_tindaklanjut = !empty($data['id_tindaklanjut']) ? (int)$data['id_tindaklanjut'] : 0;
+                                    $statusTLRaw = strtolower($data['status_tindaklanjut'] ?? '');
 
-                                        /* ============================================
-                                           LOGIKA BARU: Tentukan status display
-                                           - Jika ada kerusakan DAN tindak lanjut masih proses => "Proses Tindak Lanjut"
-                                           - Jika tidak ada kerusakan atau tindak lanjut selesai => Status asli
-                                           ============================================ */
-                                        $displayStatus = $statusPinjam;
-                                        $statusClass = '';
-                                        $statusIcon = '';
-                                        $statusText = '';
+                                    $displayStatus = $statusPinjam;
+                                    $statusClass   = '';
+                                    $statusIcon    = '';
+                                    $statusText    = '';
+                                    $isTindakLanjutAktif = false;
 
-                                        // Cek apakah ada kerusakan dan tindak lanjut masih proses
-                                        $isTindakLanjutAktif = false;
-                                        if ($kondisi === 'rusak' && $id_tindaklanjut > 0) {
-                                            // Jika status tindak lanjut adalah proses/pending/belum selesai
-                                            if (in_array($statusTLRaw, ['proses', 'pending', 'menunggu', ''])) {
-                                                $displayStatus = 'proses_tindaklanjut';
-                                                $isTindakLanjutAktif = true;
-                                            }
+                                    if ($kondisi === 'rusak' && $id_tindaklanjut > 0) {
+                                        if (in_array($statusTLRaw, ['proses', 'pending', 'menunggu', ''])) {
+                                            $displayStatus = 'proses_tindaklanjut';
+                                            $isTindakLanjutAktif = true;
                                         }
+                                    }
 
-                                        // Set status class, icon, dan text berdasarkan display status
-                                        switch ($displayStatus) {
-                                            case 'proses_tindaklanjut':
-                                                $statusClass = 'status-proses-tindaklanjut';
-                                                $statusIcon = 'tools';
-                                                $statusText = 'Proses Tindak Lanjut';
-                                                break;
-                                            case 'selesai':
-                                                $statusClass = 'status-selesai';
-                                                $statusIcon = 'check-circle';
-                                                $statusText = 'Selesai';
-                                                break;
-                                            case 'ditolak':
-                                                $statusClass = 'status-ditolak';
-                                                $statusIcon = 'x-circle';
-                                                $statusText = 'Ditolak';
-                                                break;
-                                            default:
-                                                $statusClass = 'status-selesai';
-                                                $statusIcon = 'check-circle';
-                                                $statusText = ucfirst($displayStatus);
-                                        }
-                                    ?>
-                                    <tr>
-                                        <td><?= $no++ ?></td>
-                                        <td class="fw-semibold"><?= $fasilitasList ?></td>
-                                        <td><?= $tglMulai ?></td>
-                                        <td><?= $tglKembali ?></td>
-                                        <td>
-                                            <span class="status-pill <?= $statusClass ?>">
-                                                <i class="bi bi-<?= $statusIcon ?>"></i>
-                                                <?= $statusText ?>
+                                    switch ($displayStatus) {
+                                        case 'proses_tindaklanjut':
+                                            $statusClass = 'status-proses-tindaklanjut';
+                                            $statusIcon  = 'tools';
+                                            $statusText  = 'Proses Tindak Lanjut';
+                                            break;
+                                        case 'selesai':
+                                            $statusClass = 'status-selesai';
+                                            $statusIcon  = 'check-circle';
+                                            $statusText  = 'Selesai';
+                                            break;
+                                        case 'ditolak':
+                                            $statusClass = 'status-ditolak';
+                                            $statusIcon  = 'x-circle';
+                                            $statusText  = 'Ditolak';
+                                            break;
+                                        default:
+                                            $statusClass = 'status-selesai';
+                                            $statusIcon  = 'check-circle';
+                                            $statusText  = ucfirst($displayStatus);
+                                    }
+                                ?>
+                                <tr>
+                                    <td><?= $no++ ?></td>
+                                    <td class="fw-semibold"><?= $fasilitasList ?></td>
+                                    <td><?= $tglMulai ?></td>
+                                    <td><?= $tglKembali ?></td>
+                                    <td>
+                                        <span class="status-pill <?= $statusClass ?>">
+                                            <i class="bi bi-<?= $statusIcon ?>"></i>
+                                            <?= $statusText ?>
+                                        </span>
+                                        <?php if ($isTindakLanjutAktif): ?>
+                                            <small class="d-block mt-1 text-muted" style="font-size: 0.75rem;">
+                                                <i class="bi bi-exclamation-circle"></i>
+                                                Menunggu perbaikan
+                                            </small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($kondisi === 'rusak'): ?>
+                                            <span class="badge-kondisi bg-danger text-white mb-1 d-inline-block">
+                                                <i class="bi bi-exclamation-triangle"></i>
+                                                Kembali: Rusak
+                                            </span><br>
+                                        <?php elseif ($kondisi === 'baik'): ?>
+                                            <span class="badge-kondisi bg-success text-white mb-1 d-inline-block">
+                                                <i class="bi bi-check-circle"></i>
+                                                Kembali: Baik
+                                            </span><br>
+                                        <?php elseif (!empty($data['id_kembali'])): ?>
+                                            <span class="badge-kondisi bg-secondary text-white mb-1 d-inline-block">
+                                                <i class="bi bi-dash-circle"></i>
+                                                Kembali: Lainnya
+                                            </span><br>
+                                        <?php else: ?>
+                                            <span class="badge-kondisi bg-secondary text-white mb-1 d-inline-block">
+                                                <i class="bi bi-hourglass"></i>
+                                                Belum dinilai
+                                            </span><br>
+                                        <?php endif; ?>
+
+                                        <?php if ($id_tindaklanjut > 0): ?>
+                                            <?php 
+                                                if (in_array($statusTLRaw, ['proses', 'pending', 'menunggu', ''])) {
+                                                    $tlClass = 'bg-warning text-dark';
+                                                    $tlIcon  = 'hourglass-split';
+                                                    $tlText  = 'Tindak lanjut: Proses';
+                                                } elseif ($statusTLRaw === 'selesai') {
+                                                    $tlClass = 'bg-success text-white';
+                                                    $tlIcon  = 'check-circle';
+                                                    $tlText  = 'Tindak lanjut: Selesai';
+                                                } else {
+                                                    $tlClass = 'bg-info text-white';
+                                                    $tlIcon  = 'info-circle';
+                                                    $tlText  = 'Tindak lanjut: ' . ucfirst(htmlspecialchars($statusTLRaw, ENT_QUOTES, 'UTF-8'));
+                                                }
+                                            ?>
+                                            <span class="badge-tl <?= $tlClass ?> d-inline-block">
+                                                <i class="bi bi-<?= $tlIcon ?>"></i>
+                                                <?= $tlText ?>
                                             </span>
-                                            <?php if ($isTindakLanjutAktif): ?>
-                                                <small class="d-block mt-1 text-muted" style="font-size: 0.75rem;">
-                                                    <i class="bi bi-exclamation-circle"></i>
-                                                    Menunggu perbaikan
-                                                </small>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <!-- Kondisi pengembalian -->
-                                            <?php if ($kondisi === 'rusak'): ?>
-                                                <span class="badge-kondisi bg-danger text-white mb-1 d-inline-block">
-                                                    <i class="bi bi-exclamation-triangle"></i>
-                                                    Kembali: Rusak
-                                                </span><br>
-                                            <?php elseif ($kondisi === 'baik'): ?>
-                                                <span class="badge-kondisi bg-success text-white mb-1 d-inline-block">
-                                                    <i class="bi bi-check-circle"></i>
-                                                    Kembali: Baik
-                                                </span><br>
-                                            <?php elseif (!empty($data['id_kembali'])): ?>
-                                                <span class="badge-kondisi bg-secondary text-white mb-1 d-inline-block">
-                                                    <i class="bi bi-dash-circle"></i>
-                                                    Kembali: Lainnya
-                                                </span><br>
-                                            <?php else: ?>
-                                                <span class="badge-kondisi bg-secondary text-white mb-1 d-inline-block">
-                                                    <i class="bi bi-hourglass"></i>
-                                                    Belum dinilai
-                                                </span><br>
-                                            <?php endif; ?>
-
-                                            <!-- Status Tindak Lanjut TERAKHIR -->
-                                            <?php if ($id_tindaklanjut > 0): ?>
-                                                <?php 
-                                                    if (in_array($statusTLRaw, ['proses', 'pending', 'menunggu', ''])) {
-                                                        $tlClass = 'bg-warning text-dark';
-                                                        $tlIcon = 'hourglass-split';
-                                                        $tlText  = 'Tindak lanjut: Proses';
-                                                    } elseif ($statusTLRaw === 'selesai') {
-                                                        $tlClass = 'bg-success text-white';
-                                                        $tlIcon = 'check-circle';
-                                                        $tlText  = 'Tindak lanjut: Selesai';
-                                                    } else {
-                                                        $tlClass = 'bg-info text-white';
-                                                        $tlIcon = 'info-circle';
-                                                        $tlText  = 'Tindak lanjut: ' . ucfirst(htmlspecialchars($statusTLRaw, ENT_QUOTES, 'UTF-8'));
-                                                    }
-                                                ?>
-                                                <span class="badge-tl <?= $tlClass ?> d-inline-block">
-                                                    <i class="bi bi-<?= $tlIcon ?>"></i>
-                                                    <?= $tlText ?>
-                                                </span>
-                                            <?php else: ?>
-                                                <span class="badge-tl bg-secondary text-white d-inline-block">
-                                                    <i class="bi bi-dash-circle"></i>
-                                                    Tidak ada tindak lanjut
-                                                </span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <div class="d-flex flex-column gap-2 align-items-center">
-                                                <!-- Detail peminjaman -->
-                                                <a href="detail_peminjaman.php?id=<?= $id_pinjam ?>" 
-                                                   class="btn-detail" 
-                                                   title="Lihat detail peminjaman">
-                                                    <i class="bi bi-info-circle"></i> Detail
+                                        <?php else: ?>
+                                            <span class="badge-tl bg-secondary text-white d-inline-block">
+                                                <i class="bi bi-dash-circle"></i>
+                                                Tidak ada tindak lanjut
+                                            </span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex flex-column gap-2 align-items-center">
+                                            <a href="detail_peminjaman.php?id=<?= $id_pinjam ?>" 
+                                               class="btn-detail" 
+                                               title="Lihat detail peminjaman">
+                                                <i class="bi bi-info-circle"></i> Detail
+                                            </a>
+                                            
+                                            <?php if ($kondisi === 'rusak' || $id_tindaklanjut > 0): ?>
+                                                <a href="komunikasi_tindaklanjut.php?id_pinjam=<?= $id_pinjam ?>&id_tl=<?= $id_tindaklanjut ?>"
+                                                   class="btn btn-outline-danger btn-sm"
+                                                   title="Komunikasi Kerusakan dengan Admin">
+                                                    <i class="bi bi-chat-dots"></i>
+                                                    Komunikasi
                                                 </a>
-                                                
-                                                <!-- Komunikasi Kerusakan (CHAT) - Tampil jika ada kerusakan atau tindak lanjut -->
-                                                <?php if ($kondisi === 'rusak' || $id_tindaklanjut > 0): ?>
-                                                    <a href="komunikasi_tindaklanjut.php?id_pinjam=<?= $id_pinjam ?>&id_tl=<?= $id_tindaklanjut ?>"
-                                                       class="btn btn-outline-danger btn-sm"
-                                                       title="Komunikasi Kerusakan dengan Admin">
-                                                        <i class="bi bi-chat-dots"></i>
-                                                        Komunikasi
-                                                    </a>
-                                                    <?php if ($isTindakLanjutAktif): ?>
-                                                        <small class="text-warning" style="font-size: 0.7rem;">
-                                                            <i class="bi bi-bell-fill"></i>
-                                                            Sedang diproses
-                                                        </small>
-                                                    <?php endif; ?>
+                                                <?php if ($isTindakLanjutAktif): ?>
+                                                    <small class="text-warning" style="font-size: 0.7rem;">
+                                                        <i class="bi bi-bell-fill"></i>
+                                                        Sedang diproses
+                                                    </small>
                                                 <?php endif; ?>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    <?php endwhile; ?>
-                                </tbody>
-                            </table>
-                        </div><!-- .riwayat-table-responsive -->
-                    </div><!-- .riwayat-table-wrapper -->
-                </div><!-- .riwayat-card -->
-            </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                        </table>
+                    </div><!-- .riwayat-table-responsive -->
+                </div><!-- .riwayat-table-wrapper -->
+            </div><!-- .riwayat-card -->
         </div>
+    </div>
 
-    <?php else: ?>
-        <div class="empty-state text-center" data-aos="fade-up">
-            <i class="bi bi-clock-history display-1 d-block mb-4"></i>
-            <h5 class="fw-semibold mb-3">Belum Ada Riwayat Peminjaman</h5>
-            <p class="text-muted mb-4">
-                Riwayat akan muncul setelah peminjaman Anda selesai diproses atau ditolak oleh admin.
-            </p>
-            <a href="fasilitas.php" class="btn btn-primary">
-                <i class="bi bi-building me-2"></i>Ajukan Peminjaman Baru
-            </a>
-        </div>
-    <?php endif; ?>
+<?php else: ?>
+    <div class="empty-state text-center" data-aos="fade-up">
+        <i class="bi bi-clock-history display-1 d-block mb-4"></i>
+        <h5 class="fw-semibold mb-3">Belum Ada Riwayat Peminjaman</h5>
+        <p class="text-muted mb-4">
+            Riwayat akan muncul setelah peminjaman Anda selesai diproses atau ditolak oleh admin.
+        </p>
+        <a href="fasilitas.php" class="btn btn-primary">
+            <i class="bi bi-building me-2"></i>Ajukan Peminjaman Baru
+        </a>
+    </div>
+<?php endif; ?>
 
 </div>
 
@@ -685,35 +657,31 @@ include '../includes/peminjam/footer.php';
 
 <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
 <script>
-    // Initialize AOS
-    AOS.init({ 
-        duration: 900, 
-        once: true,
-        offset: 100
-    });
+AOS.init({ 
+    duration: 900, 
+    once: true,
+    offset: 100
+});
 
-    // Navbar scroll effect
-    window.addEventListener('scroll', function() {
-        const navbar = document.querySelector('.navbar');
-        if (navbar) {
-            navbar.classList.toggle('scrolled', window.scrollY > 50);
-        }
-    });
+window.addEventListener('scroll', function() {
+    const navbar = document.querySelector('.navbar');
+    if (navbar) {
+        navbar.classList.toggle('scrolled', window.scrollY > 50);
+    }
+});
 
-    // Table row click highlight
-    document.addEventListener('DOMContentLoaded', function() {
-        const tableRows = document.querySelectorAll('.riwayat-table tbody tr');
-        
-        tableRows.forEach(row => {
-            row.addEventListener('click', function(e) {
-                // Don't trigger if clicking on a button/link
-                if (e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON' && !e.target.closest('a')) {
-                    this.style.backgroundColor = 'rgba(11, 44, 97, 0.05)';
-                    setTimeout(() => {
-                        this.style.backgroundColor = '';
-                    }, 500);
-                }
-            });
+document.addEventListener('DOMContentLoaded', function() {
+    const tableRows = document.querySelectorAll('.riwayat-table tbody tr');
+    
+    tableRows.forEach(row => {
+        row.addEventListener('click', function(e) {
+            if (e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON' && !e.target.closest('a')) {
+                this.style.backgroundColor = 'rgba(11, 44, 97, 0.05)';
+                setTimeout(() => {
+                    this.style.backgroundColor = '';
+                }, 500);
+            }
         });
     });
+});
 </script>

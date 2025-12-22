@@ -117,7 +117,7 @@ $result = $stmt->get_result();
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Sistem Digital Peminjaman Fasilitas Kampus Politeknik Negeri Bengkalis">
-    <title>Daftar Fasilitas | E-Fasilitas Polbeng</title>
+    <title>Daftar Fasilitas | Pemfas Polbeng</title>
 
     <!-- Bootstrap & Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -771,7 +771,7 @@ html {
         <a class="navbar-brand" href="index.php">
             <img src="assets/img/Logo.png" alt="Logo Polbeng" 
                  onerror="this.src='assets/img/no-image.jpg'">
-            <span class="brand-text">E-Fasilitas</span>
+            <span class="brand-text">Pemfas</span>
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
             <span class="navbar-toggler-icon"></span>
@@ -994,10 +994,10 @@ html {
 <footer class="footer-section">
     <div class="container">
         <div class="row g-4">
-            <!-- KOLOM KIRI: E-Fasilitas -->
+            <!-- KOLOM KIRI: Pemfas -->
             <div class="col-lg-4 col-md-6">
                 <div class="footer-about">
-                    <h5 class="footer-title">E-Fasilitas</h5>
+                    <h5 class="footer-title">Pemfas</h5>
                     <p>Sistem Digital Peminjaman Fasilitas Kampus Politeknik Negeri Bengkalis</p>
                     <div class="social-links mt-3">
                         <a href="#" aria-label="Facebook"><i class="bi bi-facebook"></i></a>
@@ -1036,7 +1036,7 @@ html {
         <hr class="footer-divider">
 
         <div class="footer-bottom text-center">
-            <p class="mb-0">&copy; 2025 E-Fasilitas - Politeknik Negeri Bengkalis. All Rights Reserved.</p>
+            <p class="mb-0">&copy; 2025 Pemfas - Polbeng. All Rights Reserved. | by WFE</p>
         </div>
     </div>
 </footer>
