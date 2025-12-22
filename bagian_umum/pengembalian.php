@@ -2,7 +2,7 @@
 ob_start();
 session_start();
 include '../config/koneksi.php';
-include '../config/notifikasi_helper.php'; // <<< TAMBAHAN: helper notifikasi
+include '../config/notifikasi_helper.php'; 
 
 /* =========================================================
    1. CEK LOGIN & ROLE (PREPARED)
@@ -113,8 +113,7 @@ $success = $_SESSION['success'] ?? '';
 $error   = $_SESSION['error'] ?? '';
 unset($_SESSION['success'], $_SESSION['error']);
 
-/* =========================================================
-   4. UPDATE KONDISI PENGEMBALIAN (PREPARED + VALIDASI + NOTIF)
+/* ========================================================
    ========================================================== */
 if (isset($_POST['update']) && in_array($role, ['bagian_umum', 'bagian_umum'], true)) {
     $id_kembali_raw = $_POST['id_kembali'] ?? 0;
